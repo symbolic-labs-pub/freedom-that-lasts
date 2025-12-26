@@ -1,0 +1,149 @@
+"""
+In-process Command/Event Bus
+
+Simple synchronous bus for command handling and event publishing.
+Provides registration, dispatch, and pub/sub mechanics in-process.
+
+Fun fact: This is a "mediator" pattern - it decouples command senders
+from handlers, making the system modular and testable. In production,
+this could be replaced with Kafka, NATS, or RabbitMQ without changing
+domain code!
+"""
+
+from collections import defaultdict
+from typing import Callable
+
+from freedom_that_lasts.kernel.commands import Command
+from freedom_that_lasts.kernel.events import Event
+
+
+# Type aliases for clarity
+CommandHandler = Callable[[Command], list[Event]]
+EventHandler = Callable[[Event], None]
+
+
+class InProcessBus:
+    """
+    Simple synchronous in-process bus
+
+    Provides command routing and event publishing within a single process.
+    Suitable for v0.1 (local development, testing, single-instance deployments).
+
+    For distributed scenarios, replace with message queue adapter while
+    keeping the same interface.
+    """
+
+    def __init__(self) -> None:
+        """Initialize empty bus with no registered handlers"""
+        self._command_handlers: dict[str, CommandHandler] = {}
+        self._event_handlers: defaultdict[str, list[EventHandler]] = defaultdict(list)
+
+    def register_command_handler(
+        self, command_type: str, handler: CommandHandler
+    ) -> None:
+        """
+        Register a command handler
+
+        Args:
+            command_type: Type of command to handle (e.g., "CreateWorkspace")
+            handler: Function that processes command and returns events
+
+        Raises:
+            ValueError: If handler already registered for this command type
+        """
+        if command_type in self._command_handlers:
+            raise ValueError(
+                f"Command handler already registered for {command_type}. "
+                "Each command type can have only one handler (single responsibility)."
+            )
+        self._command_handlers[command_type] = handler
+
+    def register_event_handler(self, event_type: str, handler: EventHandler) -> None:
+        """
+        Register an event handler (can have multiple per event type)
+
+        Args:
+            event_type: Type of event to handle (e.g., "LawActivated")
+            handler: Function that processes event (typically updates a projection)
+
+        Note: Multiple handlers can subscribe to the same event type.
+        This enables multiple projections to be updated from the same event.
+        """
+        self._event_handlers[event_type].append(handler)
+
+    def dispatch_command(self, command: Command) -> list[Event]:
+        """
+        Dispatch a command to its handler
+
+        Args:
+            command: Command to dispatch
+
+        Returns:
+            Events emitted by the command handler
+
+        Raises:
+            ValueError: If no handler registered for command type
+        """
+        handler = self._command_handlers.get(command.command_type)
+        if not handler:
+            raise ValueError(
+                f"No handler registered for command type '{command.command_type}'. "
+                f"Available handlers: {list(self._command_handlers.keys())}"
+            )
+        return handler(command)
+
+    def publish_event(self, event: Event) -> None:
+        """
+        Publish an event to all registered handlers
+
+        Args:
+            event: Event to publish
+
+        Note: Handlers are called synchronously in registration order.
+        If a handler fails, it doesn't affect other handlers (we catch and log).
+        """
+        handlers = self._event_handlers.get(event.event_type, [])
+        for handler in handlers:
+            try:
+                handler(event)
+            except Exception as e:
+                # In production, this should use proper logging
+                print(f"Error in event handler for {event.event_type}: {e}")
+                # Continue with other handlers - one failure shouldn't break everything
+
+    def publish_events(self, events: list[Event]) -> None:
+        """
+        Publish multiple events (convenience method)
+
+        Args:
+            events: List of events to publish
+        """
+        for event in events:
+            self.publish_event(event)
+
+    def get_command_types(self) -> list[str]:
+        """
+        Get list of registered command types
+
+        Returns:
+            List of command types that have handlers
+        """
+        return list(self._command_handlers.keys())
+
+    def get_event_types(self) -> list[str]:
+        """
+        Get list of event types that have subscribers
+
+        Returns:
+            List of event types with at least one handler
+        """
+        return list(self._event_handlers.keys())
+
+    def clear(self) -> None:
+        """
+        Clear all registered handlers (useful for testing)
+
+        Removes all command and event handlers, resetting bus to empty state.
+        """
+        self._command_handlers.clear()
+        self._event_handlers.clear()
