@@ -13,6 +13,7 @@ Freedom That Lasts is a Python package implementing the governance concepts from
 
 ## Key Features
 
+### Governance & Delegation
 - **Event Sourcing**: Append-only event log as source of truth
 - **Idempotency**: Same command = same result (deterministic replay)
 - **Revocable Delegation**: Authority with TTL and automatic expiry
@@ -20,6 +21,15 @@ Freedom That Lasts is a Python package implementing the governance concepts from
 - **Anti-Tyranny Safeguards**: Concentration metrics, automatic warnings/halts
 - **Privacy-by-Default**: Aggregate transparency without individual coercion
 - **FreedomHealth Scorecard**: Real-time risk monitoring (GREEN/YELLOW/RED)
+
+### Budget Module (v0.2)
+- **Law-Scoped Budgets**: Each budget tied to a specific law
+- **Flex Classes**: CRITICAL (5%), IMPORTANT (15%), ASPIRATIONAL (50%) step-size limits
+- **Multi-Gate Enforcement**: 4 independent validation gates (step-size, balance, authority, limits)
+- **Zero-Sum Constraint**: Strict balancing prevents unauthorized budget growth
+- **Complete Audit Trail**: Every adjustment and expenditure logged as immutable event
+- **Automatic Triggers**: Balance violations and overspending detected automatically
+- **Graduated Constraints**: Large cuts require many small steps (anti-manipulation)
 
 ## Quick Start (60 seconds)
 
@@ -59,6 +69,45 @@ health = ftl.health()
 print(f"Risk Level: {health.risk_level}")  # GREEN, YELLOW, or RED
 print(f"Active Delegations: {health.concentration.total_active_delegations}")
 print(f"Delegation Gini: {health.concentration.gini_coefficient:.3f}")
+
+# Create budget with flex classes (v0.2)
+budget = ftl.create_budget(
+    law_id=law["law_id"],
+    fiscal_year=2025,
+    items=[
+        {
+            "name": "Staff Salaries",
+            "allocated_amount": "500000",
+            "flex_class": "CRITICAL",      # 5% max change
+            "category": "personnel"
+        },
+        {
+            "name": "Equipment",
+            "allocated_amount": "200000",
+            "flex_class": "IMPORTANT",     # 15% max change
+            "category": "capital"
+        }
+    ]
+)
+
+# Activate budget & adjust allocation (zero-sum)
+ftl.activate_budget(budget["budget_id"])
+ftl.adjust_allocation(
+    budget_id=budget["budget_id"],
+    adjustments=[
+        {"item_id": "item-1", "change_amount": Decimal("-25000")},  # -5% (within CRITICAL limit)
+        {"item_id": "item-2", "change_amount": Decimal("25000")},   # +12.5% (within IMPORTANT limit)
+    ],
+    reason="Reallocate for new equipment"
+)
+
+# Approve expenditure
+ftl.approve_expenditure(
+    budget_id=budget["budget_id"],
+    item_id="item-1",
+    amount=50000,
+    purpose="Hire data analyst"
+)
 ```
 
 ### Command-Line Interface
@@ -88,6 +137,18 @@ ftl law activate --id <law_id>
 ftl tick       # Run trigger evaluation
 ftl health     # Show FreedomHealth scorecard
 ftl safety     # Show safety policy & recent events
+
+# Budget management (v0.2)
+ftl budget create --law-id <id> --fiscal-year 2025 --items '[
+  {"name":"Staff","allocated_amount":"500000","flex_class":"CRITICAL","category":"personnel"}
+]'
+ftl budget activate --id <budget_id>
+ftl budget show --id <budget_id>
+ftl budget adjust --id <id> --adjustments '[...]' --reason "Reallocate funds"
+
+# Expenditure tracking
+ftl expenditure approve --budget <id> --item <id> --amount 50000 --purpose "Hire analyst"
+ftl expenditure list --budget <id>
 ```
 
 ## Installation
@@ -101,26 +162,38 @@ pip install -e ".[dev]"
 # Run tests
 pytest
 
-# Run example
-python examples/city_pilot.py
+# Run examples
+python examples/city_pilot.py       # Law & delegation example
+python examples/budget_example.py   # Budget module examples (v0.2)
 ```
 
-## Current Status: v0.1 COMPLETE (All 8 Weeks Finished)
+## Current Status: v0.2 COMPLETE
 
-**✅ Implemented (Weeks 1-8):**
+### ✅ v0.1: Governance Kernel (Weeks 1-8)
 - **Kernel**: Event store (SQLite), projection store, IDs (UUIDv7), time abstraction, SafetyPolicy
 - **Law Module**: Workspace management, delegation DAG with TTL/expiry, law lifecycle (DRAFT→ACTIVE→REVIEW→SUNSET)
 - **Safeguards**: Delegation concentration metrics (Gini), FreedomHealth scorecard, reflex triggers
 - **Tick Engine**: Automatic safeguard evaluation with warnings/halts
 - **FTL Façade**: High-level Python API hiding event sourcing complexity
 - **CLI**: Complete typer-based CLI (init, workspace, delegate, law, tick, health, safety)
-- **Documentation**: ARCHITECTURE.md (event sourcing design), THREAT_MODEL.md (9 threat categories analyzed)
-- **Examples**: city_pilot.py (realistic scenario), replay_demo.py (event sourcing demonstration)
-- **Tests**: 76 tests passing, 72% coverage
-- **Performance**: All benchmarks pass (2500+ events/sec, <1ms queries, <1ms ticks)
+- **Documentation**: ARCHITECTURE.md, THREAT_MODEL.md
+- **Examples**: city_pilot.py, replay_demo.py
+- **Tests**: 76 tests, 72% coverage
 
-**Post-v0.1 Roadmap:**
-- v0.2 (4 weeks): Budget module (step-size engine, balancing)
+### ✅ v0.2: Budget Module (4 Weeks)
+- **Budget Aggregate**: Law-scoped budgets with flex classes (CRITICAL/IMPORTANT/ASPIRATIONAL)
+- **Multi-Gate Enforcement**: Step-size (5%/15%/50%), balance (zero-sum), authority, limits
+- **Commands & Events**: CreateBudget, ActivateBudget, AdjustAllocation, ApproveExpenditure, CloseBudget
+- **Projections**: BudgetRegistry, ExpenditureLog, BudgetHealthProjection
+- **Triggers**: Budget balance violations, expenditure overspending (integrated with TickEngine)
+- **SafetyPolicy**: Budget thresholds (step-size limits, balance enforcement, concentration)
+- **CLI**: 8 budget/expenditure commands (create, activate, adjust, show, list, close, approve, list)
+- **Documentation**: ARCHITECTURE.md updated with budget module design
+- **Examples**: budget_example.py (5 comprehensive scenarios)
+- **Tests**: 22 budget tests (invariants, handlers, projections, triggers, integration, CLI)
+- **Coverage**: 87% invariants, 87% handlers, 83% projections, 100% triggers
+
+**Roadmap:**
 - v0.3 (4 weeks): Resource/Procurement module
 - v1.0 (4 weeks): Stabilization, security audit
 
@@ -133,16 +206,20 @@ Event Sourcing Foundation
 ├── Projections (read models)
 └── Triggers (automatic reflexes)
 
-Domain Modules (v0.1 scope)
-├── Law (delegation, lifecycle, checkpoints)
-├── Feedback (FreedomHealth, triggers)
-└── CLI (user interface)
+Domain Modules
+├── Law (delegation, lifecycle, checkpoints) [v0.1]
+├── Budget (flex classes, multi-gate enforcement) [v0.2]
+├── Feedback (FreedomHealth, triggers) [v0.1]
+└── CLI (user interface) [v0.1+v0.2]
 
 Anti-Tyranny Safeguards
 ├── Delegation TTL (max 365 days)
 ├── Concentration metrics (Gini warnings)
 ├── Checkpoint enforcement (mandatory review)
-└── Privacy-by-default (aggregate transparency)
+├── Privacy-by-default (aggregate transparency)
+├── Budget flex classes (graduated constraints) [v0.2]
+├── Zero-sum balancing (prevent budget growth) [v0.2]
+└── Multi-gate validation (defense in depth) [v0.2]
 ```
 
 ## Testing
@@ -160,11 +237,12 @@ pytest tests/test_kernel/test_event_store.py -v
 
 ## Documentation
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) - Event sourcing design and technical details
+- [ARCHITECTURE.md](ARCHITECTURE.md) - Event sourcing design, budget module architecture, and technical details
 - [THREAT_MODEL.md](THREAT_MODEL.md) - Anti-tyranny safeguards and threat analysis
-- [Examples](examples/) - Working code examples (`city_pilot.py`, `replay_demo.py`)
-
-For implementation details, see the plan file at `~/.claude/plans/mossy-swinging-nygaard.md`
+- [Examples](examples/) - Working code examples:
+  - `city_pilot.py` - Law lifecycle and delegation example
+  - `replay_demo.py` - Event sourcing demonstration
+  - `budget_example.py` - Budget module comprehensive examples (5 scenarios)
 
 ## Contributing
 

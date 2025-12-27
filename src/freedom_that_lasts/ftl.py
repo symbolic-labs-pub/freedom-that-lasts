@@ -20,6 +20,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from freedom_that_lasts.budget.commands import (
+    ActivateBudget,
+    AdjustAllocation,
+    AdjustmentSpec,
+    ApproveExpenditure,
+    BudgetItemSpec,
+    CloseBudget,
+    CreateBudget,
+)
+from freedom_that_lasts.budget.handlers import BudgetCommandHandlers
+from freedom_that_lasts.budget.projections import (
+    BudgetHealthProjection,
+    BudgetRegistry,
+    ExpenditureLog,
+)
 from freedom_that_lasts.feedback.indicators import compute_freedom_health
 from freedom_that_lasts.feedback.models import FreedomHealthScore
 from freedom_that_lasts.feedback.projections import FreedomHealthProjection, SafetyEventLog
@@ -77,7 +92,10 @@ class FTL:
 
         # Initialize infrastructure
         self.event_store = SQLiteEventStore(str(self.sqlite_path))
-        self.handlers = LawCommandHandlers(self.time_provider, self.safety_policy)
+        self.law_handlers = LawCommandHandlers(self.time_provider, self.safety_policy)
+        self.budget_handlers = BudgetCommandHandlers(
+            self.time_provider, self.safety_policy
+        )
         self.tick_engine = TickEngine(
             self.event_store, self.time_provider, self.safety_policy
         )
@@ -86,6 +104,9 @@ class FTL:
         self.workspace_registry = WorkspaceRegistry()
         self.delegation_graph = DelegationGraph()
         self.law_registry = LawRegistry()
+        self.budget_registry = BudgetRegistry()
+        self.expenditure_log = ExpenditureLog()
+        self.budget_health_projection = BudgetHealthProjection()
         self.freedom_health_projection = FreedomHealthProjection()
         self.safety_event_log = SafetyEventLog()
 
@@ -108,6 +129,12 @@ class FTL:
                 self.delegation_graph.apply_event(event)
             elif event.event_type.startswith("Law"):
                 self.law_registry.apply_event(event)
+            elif event.event_type.startswith("Budget") or event.event_type.startswith(
+                "Expenditure"
+            ):
+                self.budget_registry.apply_event(event)
+                self.expenditure_log.apply_event(event)
+                self.budget_health_projection.apply_event(event)
             elif event.event_type in [
                 "DelegationConcentrationWarning",
                 "DelegationConcentrationHalt",
@@ -136,13 +163,14 @@ class FTL:
         command = CreateWorkspace(
             name=name, parent_workspace_id=None, scope=scope or {}
         )
-        events = self.handlers.handle_create_workspace(
+        events = self.law_handlers.handle_create_workspace(
             command, generate_id(), actor_id
         )
 
         # Store events and update projections
         for event in events:
-            self.event_store.append(event.stream_id, 0, [event])
+            expected_version = event.version - 1
+            self.event_store.append(event.stream_id, expected_version, [event])
             self.workspace_registry.apply_event(event)
 
         return self.workspace_registry.get(events[0].payload["workspace_id"])
@@ -180,7 +208,7 @@ class FTL:
             to_actor=to_actor,
             ttl_days=ttl_days,
         )
-        events = self.handlers.handle_delegate_decision_right(
+        events = self.law_handlers.handle_delegate_decision_right(
             command,
             generate_id(),
             actor_id or from_actor,
@@ -190,7 +218,8 @@ class FTL:
 
         # Store events and update projections
         for event in events:
-            self.event_store.append(event.stream_id, 0, [event])
+            expected_version = event.version - 1
+            self.event_store.append(event.stream_id, expected_version, [event])
             self.delegation_graph.apply_event(event)
 
         return self.delegation_graph.get(events[0].payload["delegation_id"])
@@ -233,7 +262,7 @@ class FTL:
             checkpoints=checkpoints,
             params=params or {},
         )
-        events = self.handlers.handle_create_law(
+        events = self.law_handlers.handle_create_law(
             command,
             generate_id(),
             actor_id,
@@ -242,7 +271,8 @@ class FTL:
 
         # Store events and update projections
         for event in events:
-            self.event_store.append(event.stream_id, 0, [event])
+            expected_version = event.version - 1
+            self.event_store.append(event.stream_id, expected_version, [event])
             self.law_registry.apply_event(event)
 
         return self.law_registry.get(events[0].payload["law_id"])
@@ -262,7 +292,7 @@ class FTL:
         law = self.law_registry.get(law_id)
         current_version = law["version"] if law else 0
 
-        events = self.handlers.handle_activate_law(
+        events = self.law_handlers.handle_activate_law(
             command, generate_id(), actor_id, self.law_registry.to_dict()["laws"]
         )
 
@@ -296,7 +326,7 @@ class FTL:
         law = self.law_registry.get(law_id)
         current_version = law["version"] if law else 0
 
-        events = self.handlers.handle_complete_law_review(
+        events = self.law_handlers.handle_complete_law_review(
             command, generate_id(), actor_id, self.law_registry.to_dict()["laws"]
         )
 
@@ -415,3 +445,275 @@ class FTL:
     def get_safety_policy(self) -> SafetyPolicy:
         """Get current safety policy"""
         return self.safety_policy
+
+    # Budget operations
+
+    def create_budget(
+        self,
+        law_id: str,
+        fiscal_year: int,
+        items: list[dict[str, Any]],
+        actor_id: str = "system",
+    ) -> dict[str, Any]:
+        """
+        Create a new budget for a law
+
+        Args:
+            law_id: Law ID this budget is for
+            fiscal_year: Fiscal year (e.g., 2025)
+            items: Budget items [{name, allocated_amount, flex_class, category}, ...]
+            actor_id: Actor creating the budget
+
+        Returns:
+            Budget dict with budget_id
+
+        Raises:
+            LawNotFoundForBudget: If law doesn't exist
+        """
+        # Convert items to BudgetItemSpec
+        item_specs = [
+            BudgetItemSpec(
+                name=item["name"],
+                allocated_amount=item["allocated_amount"],
+                flex_class=item["flex_class"],
+                category=item.get("category", "general"),
+            )
+            for item in items
+        ]
+
+        command = CreateBudget(
+            law_id=law_id, fiscal_year=fiscal_year, items=item_specs
+        )
+
+        events = self.budget_handlers.handle_create_budget(
+            command,
+            generate_id(),
+            actor_id,
+            self.law_registry.to_dict()["laws"],
+        )
+
+        # Store events and update projections
+        for event in events:
+            expected_version = event.version - 1
+            self.event_store.append(event.stream_id, expected_version, [event])
+            self.budget_registry.apply_event(event)
+
+        return self.budget_registry.get(events[0].payload["budget_id"])
+
+    def activate_budget(
+        self, budget_id: str, actor_id: str = "system"
+    ) -> dict[str, Any]:
+        """
+        Activate a budget (DRAFT → ACTIVE)
+
+        Only ACTIVE budgets can approve expenditures.
+
+        Args:
+            budget_id: Budget ID
+            actor_id: Actor activating the budget
+
+        Returns:
+            Updated budget dict
+
+        Raises:
+            BudgetNotFound: If budget doesn't exist
+        """
+        command = ActivateBudget(budget_id=budget_id)
+
+        events = self.budget_handlers.handle_activate_budget(
+            command,
+            generate_id(),
+            actor_id,
+            self.budget_registry.budgets,
+        )
+
+        # Store events and update projections
+        for event in events:
+            expected_version = event.version - 1
+            self.event_store.append(event.stream_id, expected_version, [event])
+            self.budget_registry.apply_event(event)
+
+        return self.budget_registry.get(budget_id)
+
+    def adjust_allocation(
+        self,
+        budget_id: str,
+        adjustments: list[dict[str, Any]],
+        reason: str,
+        actor_id: str = "system",
+    ) -> dict[str, Any]:
+        """
+        Adjust budget allocations with multi-gate enforcement
+
+        ALL four gates must pass:
+        - Gate 1: Step-size limits (flex class constraints)
+        - Gate 2: Budget balance (zero-sum, strict)
+        - Gate 3: Delegation authority (checked by façade)
+        - Gate 4: No overspending (allocation >= current spending)
+
+        Args:
+            budget_id: Budget ID
+            adjustments: [{item_id, change_amount}, ...]
+            reason: Reason for adjustment
+            actor_id: Actor making the adjustment
+
+        Returns:
+            Updated budget dict
+
+        Raises:
+            BudgetNotFound: If budget doesn't exist
+            FlexStepSizeViolation: If any adjustment exceeds flex class limit
+            BudgetBalanceViolation: If adjustments break zero-sum
+            AllocationBelowSpending: If adjustment creates overspending
+        """
+        # Convert adjustments to AdjustmentSpec
+        adjustment_specs = [
+            AdjustmentSpec(
+                item_id=adj["item_id"], change_amount=adj["change_amount"]
+            )
+            for adj in adjustments
+        ]
+
+        command = AdjustAllocation(
+            budget_id=budget_id, adjustments=adjustment_specs, reason=reason
+        )
+
+        events = self.budget_handlers.handle_adjust_allocation(
+            command,
+            generate_id(),
+            actor_id,
+            self.budget_registry.budgets,
+        )
+
+        # Store events and update projections
+        for event in events:
+            expected_version = event.version - 1
+            self.event_store.append(event.stream_id, expected_version, [event])
+            self.budget_registry.apply_event(event)
+
+        return self.budget_registry.get(budget_id)
+
+    def approve_expenditure(
+        self,
+        budget_id: str,
+        item_id: str,
+        amount: Any,
+        purpose: str,
+        actor_id: str = "system",
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Approve an expenditure against a budget item
+
+        Returns approval or rejection event depending on validation.
+
+        Args:
+            budget_id: Budget ID
+            item_id: Budget item ID
+            amount: Expenditure amount (Decimal or str/int)
+            purpose: Purpose of expenditure
+            actor_id: Actor approving the expenditure
+            metadata: Optional metadata
+
+        Returns:
+            Budget dict (updated if approved)
+        """
+        command = ApproveExpenditure(
+            budget_id=budget_id,
+            item_id=item_id,
+            amount=amount,
+            purpose=purpose,
+            metadata=metadata or {},
+        )
+
+        events = self.budget_handlers.handle_approve_expenditure(
+            command,
+            generate_id(),
+            actor_id,
+            self.budget_registry.budgets,
+        )
+
+        # Store events and update projections
+        for event in events:
+            expected_version = event.version - 1
+            self.event_store.append(event.stream_id, expected_version, [event])
+            self.budget_registry.apply_event(event)
+            self.expenditure_log.apply_event(event)
+
+        return self.budget_registry.get(budget_id)
+
+    def close_budget(
+        self, budget_id: str, reason: str, actor_id: str = "system"
+    ) -> dict[str, Any]:
+        """
+        Close a budget (end of fiscal year)
+
+        No further expenditures or adjustments allowed after closure.
+
+        Args:
+            budget_id: Budget ID
+            reason: Reason for closure
+            actor_id: Actor closing the budget
+
+        Returns:
+            Closed budget dict
+
+        Raises:
+            BudgetNotFound: If budget doesn't exist
+        """
+        command = CloseBudget(budget_id=budget_id, reason=reason)
+
+        events = self.budget_handlers.handle_close_budget(
+            command,
+            generate_id(),
+            actor_id,
+            self.budget_registry.budgets,
+        )
+
+        # Store events and update projections
+        for event in events:
+            expected_version = event.version - 1
+            self.event_store.append(event.stream_id, expected_version, [event])
+            self.budget_registry.apply_event(event)
+
+        return self.budget_registry.get(budget_id)
+
+    def list_budgets(
+        self, law_id: str | None = None, status: str | None = None
+    ) -> list[dict[str, Any]]:
+        """
+        List budgets
+
+        Args:
+            law_id: Optional law ID to filter by
+            status: Optional status to filter by (DRAFT, ACTIVE, CLOSED)
+
+        Returns:
+            List of budget dicts
+        """
+        if law_id:
+            return self.budget_registry.list_by_law(law_id)
+        elif status:
+            from freedom_that_lasts.budget.models import BudgetStatus
+
+            return self.budget_registry.list_by_status(BudgetStatus(status))
+        else:
+            return self.budget_registry.list_all()
+
+    def get_expenditures(
+        self, budget_id: str, item_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """
+        Get expenditure history for a budget or budget item
+
+        Args:
+            budget_id: Budget ID
+            item_id: Optional item ID to filter by
+
+        Returns:
+            List of expenditure dicts
+        """
+        if item_id:
+            return self.expenditure_log.get_by_item(budget_id, item_id)
+        else:
+            return self.expenditure_log.get_by_budget(budget_id)

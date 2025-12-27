@@ -105,6 +105,28 @@ class SafetyPolicy(BaseModel):
         description="Escalate transparency when HALT thresholds breached",
     )
 
+    # Budget safeguards (anti-manipulation)
+    budget_step_size_limits: dict[str, float] = Field(
+        default={
+            "CRITICAL": 0.05,  # 5% max change per adjustment
+            "IMPORTANT": 0.15,  # 15% max change per adjustment
+            "ASPIRATIONAL": 0.50,  # 50% max change per adjustment
+        },
+        description="Maximum percentage change per adjustment by flex class",
+    )
+
+    budget_balance_enforcement: Literal["STRICT", "RELAXED"] = Field(
+        default="STRICT",
+        description="Budget balance mode: STRICT (zero-sum) or RELAXED (allow variance)",
+    )
+
+    budget_critical_concentration_threshold: float = Field(
+        default=0.50,
+        ge=0.0,
+        le=1.0,
+        description="Warning threshold for CRITICAL items concentration (% of total)",
+    )
+
     model_config = {
         "frozen": False,  # Policy can be updated (but changes are evented)
         "json_schema_extra": {

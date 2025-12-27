@@ -33,10 +33,14 @@ app = typer.Typer(
 workspace_app = typer.Typer(help="Workspace management commands")
 delegate_app = typer.Typer(help="Delegation management commands")
 law_app = typer.Typer(help="Law lifecycle management commands")
+budget_app = typer.Typer(help="Budget management commands")
+expenditure_app = typer.Typer(help="Expenditure tracking commands")
 
 app.add_typer(workspace_app, name="workspace")
 app.add_typer(delegate_app, name="delegate")
 app.add_typer(law_app, name="law")
+app.add_typer(budget_app, name="budget")
+app.add_typer(expenditure_app, name="expenditure")
 
 # Global state
 DEFAULT_DB = Path(".ftl.db")
@@ -272,6 +276,281 @@ def law_review(
     typer.echo(f"  Title: {law['title']}")
     typer.echo(f"  Outcome: {outcome}")
     typer.echo(f"  New status: {law['status']}")
+
+
+# Budget commands
+
+
+@budget_app.command("create")
+def budget_create(
+    law_id: Annotated[str, typer.Option("--law-id", help="Law ID")],
+    fiscal_year: Annotated[int, typer.Option("--fiscal-year", help="Fiscal year")],
+    items: Annotated[str, typer.Option("--items", help="Budget items (JSON array)")],
+    actor_id: Annotated[
+        str,
+        typer.Option("--actor", help="Actor creating budget"),
+    ] = "system",
+    db: Annotated[
+        Optional[Path],
+        typer.Option("--db", help="Database path"),
+    ] = None,
+) -> None:
+    """Create a new budget for a law"""
+    ftl = get_ftl(db)
+
+    items_list = json.loads(items)
+    budget = ftl.create_budget(
+        law_id=law_id,
+        fiscal_year=fiscal_year,
+        items=items_list,
+        actor_id=actor_id,
+    )
+
+    typer.echo(f"✓ Created budget: {budget['budget_id']}")
+    typer.echo(f"  Law: {budget['law_id']}")
+    typer.echo(f"  Fiscal Year: {budget['fiscal_year']}")
+    typer.echo(f"  Status: {budget['status']}")
+    typer.echo(f"  Total: ${budget['budget_total']}")
+    typer.echo(f"  Items: {len(budget['items'])}")
+
+
+@budget_app.command("activate")
+def budget_activate(
+    budget_id: Annotated[str, typer.Option("--id", help="Budget ID")],
+    actor_id: Annotated[
+        str,
+        typer.Option("--actor", help="Actor activating budget"),
+    ] = "system",
+    db: Annotated[
+        Optional[Path],
+        typer.Option("--db", help="Database path"),
+    ] = None,
+) -> None:
+    """Activate a budget (DRAFT → ACTIVE)"""
+    ftl = get_ftl(db)
+
+    budget = ftl.activate_budget(budget_id=budget_id, actor_id=actor_id)
+
+    typer.echo(f"✓ Activated budget: {budget['budget_id']}")
+    typer.echo(f"  Status: {budget['status']}")
+    typer.echo(f"  Activated at: {budget['activated_at']}")
+
+
+@budget_app.command("adjust")
+def budget_adjust(
+    budget_id: Annotated[str, typer.Option("--id", help="Budget ID")],
+    adjustments: Annotated[
+        str,
+        typer.Option("--adjustments", help="Adjustments (JSON array)"),
+    ],
+    reason: Annotated[str, typer.Option("--reason", help="Reason for adjustment")],
+    actor_id: Annotated[
+        str,
+        typer.Option("--actor", help="Actor making adjustment"),
+    ] = "system",
+    db: Annotated[
+        Optional[Path],
+        typer.Option("--db", help="Database path"),
+    ] = None,
+) -> None:
+    """Adjust budget allocations (zero-sum)"""
+    ftl = get_ftl(db)
+
+    adjustments_list = json.loads(adjustments)
+    budget = ftl.adjust_allocation(
+        budget_id=budget_id,
+        adjustments=adjustments_list,
+        reason=reason,
+        actor_id=actor_id,
+    )
+
+    typer.echo(f"✓ Adjusted budget: {budget['budget_id']}")
+    typer.echo(f"  Reason: {reason}")
+    typer.echo(f"  Adjustments applied: {len(adjustments_list)}")
+
+
+@budget_app.command("show")
+def budget_show(
+    budget_id: Annotated[str, typer.Option("--id", help="Budget ID")],
+    db: Annotated[
+        Optional[Path],
+        typer.Option("--db", help="Database path"),
+    ] = None,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output as JSON"),
+    ] = False,
+) -> None:
+    """Show budget details"""
+    ftl = get_ftl(db)
+
+    budget = ftl.budget_registry.get(budget_id)
+    if not budget:
+        typer.echo(f"Error: Budget not found: {budget_id}", err=True)
+        raise typer.Exit(1)
+
+    if json_output:
+        typer.echo(json.dumps(budget, indent=2, default=str))
+        return
+
+    typer.echo(f"\nBudget: {budget['budget_id']}")
+    typer.echo(f"  Law: {budget['law_id']}")
+    typer.echo(f"  Fiscal Year: {budget['fiscal_year']}")
+    typer.echo(f"  Status: {budget['status']}")
+    typer.echo(f"  Total: ${budget['budget_total']}")
+    typer.echo(f"  Created: {budget['created_at']}")
+
+    if budget.get("activated_at"):
+        typer.echo(f"  Activated: {budget['activated_at']}")
+    if budget.get("closed_at"):
+        typer.echo(f"  Closed: {budget['closed_at']}")
+
+    typer.echo(f"\n  Budget Items ({len(budget['items'])}):")
+    for item in budget["items"].values():
+        spent = float(item["spent_amount"])
+        allocated = float(item["allocated_amount"])
+        remaining = allocated - spent
+        utilization = (spent / allocated * 100) if allocated > 0 else 0
+
+        typer.echo(f"\n    {item['name']} [{item['flex_class']}]")
+        typer.echo(f"      Allocated: ${item['allocated_amount']}")
+        typer.echo(f"      Spent: ${item['spent_amount']}")
+        typer.echo(f"      Remaining: ${remaining:.2f}")
+        typer.echo(f"      Utilization: {utilization:.1f}%")
+
+
+@budget_app.command("list")
+def budget_list(
+    law_id: Annotated[
+        Optional[str],
+        typer.Option("--law-id", help="Filter by law ID"),
+    ] = None,
+    status: Annotated[
+        Optional[str],
+        typer.Option("--status", help="Filter by status (DRAFT, ACTIVE, CLOSED)"),
+    ] = None,
+    db: Annotated[
+        Optional[Path],
+        typer.Option("--db", help="Database path"),
+    ] = None,
+) -> None:
+    """List budgets"""
+    ftl = get_ftl(db)
+
+    budgets = ftl.list_budgets(law_id=law_id, status=status)
+
+    if not budgets:
+        typer.echo(
+            f"No budgets{f' for law {law_id}' if law_id else ''}{f' with status {status}' if status else ''}"
+        )
+        return
+
+    typer.echo(f"Budgets ({len(budgets)}):")
+    for budget in budgets:
+        typer.echo(
+            f"  {budget['budget_id']}: FY{budget['fiscal_year']} [{budget['status']}] - ${budget['budget_total']}"
+        )
+
+
+@budget_app.command("close")
+def budget_close(
+    budget_id: Annotated[str, typer.Option("--id", help="Budget ID")],
+    reason: Annotated[str, typer.Option("--reason", help="Reason for closing")],
+    actor_id: Annotated[
+        str,
+        typer.Option("--actor", help="Actor closing budget"),
+    ] = "system",
+    db: Annotated[
+        Optional[Path],
+        typer.Option("--db", help="Database path"),
+    ] = None,
+) -> None:
+    """Close a budget (end of fiscal year)"""
+    ftl = get_ftl(db)
+
+    budget = ftl.close_budget(budget_id=budget_id, reason=reason, actor_id=actor_id)
+
+    typer.echo(f"✓ Closed budget: {budget['budget_id']}")
+    typer.echo(f"  Status: {budget['status']}")
+    typer.echo(f"  Closed at: {budget['closed_at']}")
+    typer.echo(f"  Reason: {reason}")
+
+
+# Expenditure commands
+
+
+@expenditure_app.command("approve")
+def expenditure_approve(
+    budget_id: Annotated[str, typer.Option("--budget", help="Budget ID")],
+    item_id: Annotated[str, typer.Option("--item", help="Budget item ID")],
+    amount: Annotated[float, typer.Option("--amount", help="Expenditure amount")],
+    purpose: Annotated[str, typer.Option("--purpose", help="Purpose of expenditure")],
+    actor_id: Annotated[
+        str,
+        typer.Option("--actor", help="Actor approving expenditure"),
+    ] = "system",
+    metadata: Annotated[
+        Optional[str],
+        typer.Option("--metadata", help="Additional metadata (JSON)"),
+    ] = None,
+    db: Annotated[
+        Optional[Path],
+        typer.Option("--db", help="Database path"),
+    ] = None,
+) -> None:
+    """Approve an expenditure"""
+    ftl = get_ftl(db)
+
+    metadata_dict = json.loads(metadata) if metadata else {}
+
+    budget = ftl.approve_expenditure(
+        budget_id=budget_id,
+        item_id=item_id,
+        amount=amount,
+        purpose=purpose,
+        actor_id=actor_id,
+        metadata=metadata_dict,
+    )
+
+    item = budget["items"][item_id]
+    typer.echo(f"✓ Approved expenditure: ${amount}")
+    typer.echo(f"  Budget: {budget_id}")
+    typer.echo(f"  Item: {item['name']}")
+    typer.echo(f"  Purpose: {purpose}")
+    typer.echo(f"  New spent amount: ${item['spent_amount']}")
+    typer.echo(
+        f"  Remaining: ${float(item['allocated_amount']) - float(item['spent_amount']):.2f}"
+    )
+
+
+@expenditure_app.command("list")
+def expenditure_list(
+    budget_id: Annotated[str, typer.Option("--budget", help="Budget ID")],
+    item_id: Annotated[
+        Optional[str],
+        typer.Option("--item", help="Filter by item ID"),
+    ] = None,
+    db: Annotated[
+        Optional[Path],
+        typer.Option("--db", help="Database path"),
+    ] = None,
+) -> None:
+    """List expenditures for a budget"""
+    ftl = get_ftl(db)
+
+    expenditures = ftl.get_expenditures(budget_id=budget_id, item_id=item_id)
+
+    if not expenditures:
+        typer.echo(
+            f"No expenditures{f' for item {item_id}' if item_id else ''} in budget {budget_id}"
+        )
+        return
+
+    typer.echo(f"Expenditures ({len(expenditures)}):")
+    for exp in expenditures:
+        typer.echo(
+            f"  {exp['approved_at']}: ${exp['amount']} - {exp['purpose']} (remaining: ${exp['remaining_budget']})"
+        )
 
 
 # Monitoring commands

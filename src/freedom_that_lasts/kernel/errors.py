@@ -124,3 +124,107 @@ class DelegationNotFound(FTLError):
     def __init__(self, delegation_id: str) -> None:
         self.delegation_id = delegation_id
         super().__init__(f"Delegation {delegation_id} not found")
+
+
+# Budget Module Errors
+
+
+class BudgetError(FTLError):
+    """Base class for budget-specific errors"""
+
+    pass
+
+
+class FlexStepSizeViolation(InvariantViolation):
+    """Raised when budget adjustment exceeds flex class step-size limit"""
+
+    def __init__(
+        self, item_id: str, flex_class: str, change_percent: float, max_percent: float
+    ) -> None:
+        self.item_id = item_id
+        self.flex_class = flex_class
+        self.change_percent = change_percent
+        self.max_percent = max_percent
+        super().__init__(
+            f"Item {item_id} adjustment {change_percent:.1%} exceeds {flex_class} "
+            f"limit {max_percent:.1%} - graduated constraints prevent sudden cuts"
+        )
+
+
+class BudgetBalanceViolation(InvariantViolation):
+    """Raised when budget adjustments violate zero-sum constraint"""
+
+    def __init__(self, budget_total: str, new_total: str, variance: str) -> None:
+        self.budget_total = budget_total
+        self.new_total = new_total
+        self.variance = variance
+        super().__init__(
+            f"Budget balance violated: total allocated {new_total} != budget total "
+            f"{budget_total} (variance: {variance}) - strict balancing prevents unauthorized growth"
+        )
+
+
+class ExpenditureExceedsAllocation(InvariantViolation):
+    """Raised when expenditure would exceed item allocation"""
+
+    def __init__(
+        self, item_id: str, amount: str, allocated: str, spent: str, remaining: str
+    ) -> None:
+        self.item_id = item_id
+        self.amount = amount
+        self.allocated = allocated
+        self.spent = spent
+        self.remaining = remaining
+        super().__init__(
+            f"Item {item_id} expenditure {amount} exceeds remaining budget {remaining} "
+            f"(allocated: {allocated}, spent: {spent})"
+        )
+
+
+class AllocationBelowSpending(InvariantViolation):
+    """Raised when allocation adjustment would create overspending"""
+
+    def __init__(self, item_id: str, new_allocation: str, spent_amount: str) -> None:
+        self.item_id = item_id
+        self.new_allocation = new_allocation
+        self.spent_amount = spent_amount
+        super().__init__(
+            f"Item {item_id} allocation {new_allocation} is below current spending "
+            f"{spent_amount} - cannot reduce allocation below spending"
+        )
+
+
+class BudgetNotFound(BudgetError):
+    """Raised when budget does not exist"""
+
+    def __init__(self, budget_id: str) -> None:
+        self.budget_id = budget_id
+        super().__init__(f"Budget {budget_id} not found")
+
+
+class BudgetItemNotFound(BudgetError):
+    """Raised when budget item does not exist"""
+
+    def __init__(self, budget_id: str, item_id: str) -> None:
+        self.budget_id = budget_id
+        self.item_id = item_id
+        super().__init__(f"Item {item_id} not found in budget {budget_id}")
+
+
+class BudgetNotActive(BudgetError):
+    """Raised when operation requires ACTIVE budget but budget has different status"""
+
+    def __init__(self, budget_id: str, current_status: str) -> None:
+        self.budget_id = budget_id
+        self.current_status = current_status
+        super().__init__(
+            f"Budget {budget_id} is {current_status}, must be ACTIVE for this operation"
+        )
+
+
+class LawNotFoundForBudget(BudgetError):
+    """Raised when law does not exist for budget creation"""
+
+    def __init__(self, law_id: str) -> None:
+        self.law_id = law_id
+        super().__init__(f"Law {law_id} not found - cannot create budget")

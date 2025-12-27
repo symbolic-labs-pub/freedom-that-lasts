@@ -11,6 +11,11 @@ regularly checking for threats and responding automatically!
 
 from datetime import datetime
 
+from freedom_that_lasts.budget.projections import BudgetRegistry
+from freedom_that_lasts.budget.triggers import (
+    evaluate_budget_balance_trigger,
+    evaluate_expenditure_overspend_trigger,
+)
 from freedom_that_lasts.feedback.indicators import compute_freedom_health
 from freedom_that_lasts.feedback.triggers import evaluate_all_triggers
 from freedom_that_lasts.kernel.event_store import SQLiteEventStore
@@ -44,16 +49,17 @@ class TickResult:
 
     def has_warnings(self) -> bool:
         """Check if any warnings were triggered"""
-        return any(
-            e.event_type == "DelegationConcentrationWarning"
-            for e in self.triggered_events
-        )
+        warning_types = {
+            "DelegationConcentrationWarning",
+            "BudgetBalanceViolationDetected",
+            "BudgetOverspendDetected",
+        }
+        return any(e.event_type in warning_types for e in self.triggered_events)
 
     def has_halts(self) -> bool:
         """Check if any halts were triggered"""
-        return any(
-            e.event_type == "DelegationConcentrationHalt" for e in self.triggered_events
-        )
+        halt_types = {"DelegationConcentrationHalt"}
+        return any(e.event_type in halt_types for e in self.triggered_events)
 
     def summary(self) -> str:
         """Human-readable summary of tick result"""
@@ -98,6 +104,7 @@ class TickEngine:
         self,
         delegation_graph: DelegationGraph,
         law_registry: LawRegistry,
+        budget_registry: BudgetRegistry | None = None,
     ) -> TickResult:
         """
         Execute a single tick evaluation
@@ -105,6 +112,7 @@ class TickEngine:
         Args:
             delegation_graph: Current delegation state
             law_registry: Current law state
+            budget_registry: Optional budget state (for budget triggers)
 
         Returns:
             TickResult with events and health assessment
@@ -130,13 +138,27 @@ class TickEngine:
         in_degree_map = compute_in_degrees(active_edges, now)
         overdue_laws = law_registry.list_overdue_reviews(now)
 
-        # Evaluate all triggers
+        # Evaluate law/delegation triggers
         triggered_events = evaluate_all_triggers(
             in_degree_map=in_degree_map,
             overdue_laws=overdue_laws,
             policy=self.safety_policy,
             time_provider=self.time_provider,
         )
+
+        # Evaluate budget triggers if budget registry is provided
+        if budget_registry is not None:
+            active_budgets = budget_registry.list_active()
+
+            # Check budget balance constraints
+            balance_events = evaluate_budget_balance_trigger(active_budgets, now)
+            triggered_events.extend(balance_events)
+
+            # Check expenditure overspending
+            overspend_events = evaluate_expenditure_overspend_trigger(
+                active_budgets, now
+            )
+            triggered_events.extend(overspend_events)
 
         # Append all events to store
         all_events = [tick_event] + triggered_events
