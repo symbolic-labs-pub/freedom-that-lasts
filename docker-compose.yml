@@ -1,0 +1,147 @@
+version: '3.8'
+
+services:
+  # ============================================================================
+  # Freedom That Lasts - Main Service
+  # ============================================================================
+  ftl:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: freedom-that-lasts:1.0.0-dev
+    container_name: ftl-app
+    restart: unless-stopped
+
+    # Environment variables
+    environment:
+      - FTL_DB_PATH=/app/data/ftl.db
+      - FTL_LOG_LEVEL=INFO
+      - FTL_JSON_LOGS=true
+
+    # Port mappings
+    ports:
+      - "8080:8080"  # Health check server
+      - "9090:9090"  # Prometheus metrics
+
+    # Volume mounts
+    volumes:
+      - ftl-data:/app/data
+      - ftl-logs:/app/logs
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/ready"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+    # Security
+    user: "1000:1000"
+    read_only: false
+    security_opt:
+      - no-new-privileges:true
+
+    # Networks
+    networks:
+      - ftl-network
+
+  # ============================================================================
+  # Prometheus - Metrics Collection (Optional)
+  # ============================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ftl-prometheus
+    restart: unless-stopped
+
+    # Configuration
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+
+    # Port mappings
+    ports:
+      - "9091:9090"  # Prometheus UI (mapped to 9091 to avoid conflict)
+
+    # Volume mounts
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+
+    # Networks
+    networks:
+      - ftl-network
+
+    # Depends on FTL service
+    depends_on:
+      ftl:
+        condition: service_healthy
+
+    profiles:
+      - monitoring
+
+  # ============================================================================
+  # Grafana - Metrics Visualization (Optional)
+  # ============================================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ftl-grafana
+    restart: unless-stopped
+
+    # Environment variables
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+
+    # Port mappings
+    ports:
+      - "3000:3000"  # Grafana UI
+
+    # Volume mounts
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./deploy/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./deploy/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+
+    # Networks
+    networks:
+      - ftl-network
+
+    # Depends on Prometheus
+    depends_on:
+      - prometheus
+
+    profiles:
+      - monitoring
+
+# ============================================================================
+# Volumes
+# ============================================================================
+volumes:
+  ftl-data:
+    driver: local
+  ftl-logs:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+# ============================================================================
+# Networks
+# ============================================================================
+networks:
+  ftl-network:
+    driver: bridge

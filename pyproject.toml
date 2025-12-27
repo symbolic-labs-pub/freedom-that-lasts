@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "freedom-that-lasts"
-version = "0.1.0"
+version = "1.0.0-dev"
 description = "Event-sourced governance kernel preserving future option space through revocable delegation, time-bound laws, and anti-tyranny safeguards"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -34,6 +34,10 @@ dependencies = [
     "sqlmodel>=0.0.14,<1.0.0",
     "typer>=0.12.0,<1.0.0",
     "rich>=13.0.0,<14.0.0",  # For beautiful CLI output
+    "tenacity>=8.0.0,<9.0.0",  # Retry logic with exponential backoff
+    "structlog>=24.0.0,<25.0.0",  # Structured logging
+    "prometheus-client>=0.20.0,<1.0.0",  # Metrics collection
+    "flask>=3.0.0,<4.0.0",  # Health check server
 ]
 
 [project.optional-dependencies]
@@ -42,6 +46,15 @@ dev = [
     "pytest-cov>=4.1.0,<5.0.0",
     "mypy>=1.8.0,<2.0.0",
     "ruff>=0.3.0,<1.0.0",
+    "pip-audit>=2.7.0,<3.0.0",  # Security: CVE scanning
+    "safety>=3.0.0,<4.0.0",  # Security: Vulnerability database
+    "bandit>=1.7.0,<2.0.0",  # Security: Python security analysis
+    "pytest-benchmark>=4.0.0,<5.0.0",  # Performance benchmarks
+    "memory-profiler>=0.61.0,<1.0.0",  # Memory profiling
+    "pre-commit>=3.5.0,<4.0.0",  # Git hooks
+    "pylint>=3.0.0,<4.0.0",  # Additional linting
+    "vulture>=2.10.0,<3.0.0",  # Dead code detection
+    "radon>=6.0.0,<7.0.0",  # Complexity analysis
 ]
 
 [project.scripts]
@@ -99,6 +112,11 @@ select = [
     "B",   # flake8-bugbear
     "C4",  # flake8-comprehensions
     "UP",  # pyupgrade
+    "S",   # flake8-bandit (security)
+    "T20", # flake8-print (no print statements)
+    "RET", # flake8-return (return consistency)
+    "SIM", # flake8-simplify
+    "ARG", # flake8-unused-arguments
 ]
 ignore = []
 fixable = ["ALL"]

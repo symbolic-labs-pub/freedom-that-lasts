@@ -46,8 +46,11 @@ from freedom_that_lasts.budget.models import Budget, BudgetItem
 from freedom_that_lasts.kernel.errors import BudgetNotFound
 from freedom_that_lasts.kernel.events import Event, create_event
 from freedom_that_lasts.kernel.ids import generate_id
+from freedom_that_lasts.kernel.logging import LogOperation, get_logger
 from freedom_that_lasts.kernel.safety_policy import SafetyPolicy
 from freedom_that_lasts.kernel.time import TimeProvider
+
+logger = get_logger(__name__)
 
 
 class BudgetCommandHandlers:
@@ -99,56 +102,67 @@ class BudgetCommandHandlers:
         Raises:
             LawNotFoundForBudget: If law doesn't exist
         """
-        now = self.time_provider.now()
-
-        # Validate law exists
-        validate_law_exists(command.law_id, law_registry)
-
-        # Generate budget ID
-        budget_id = generate_id()
-
-        # Convert item specs to ItemCreatedSpec with generated IDs
-        items_with_ids: list[ItemCreatedSpec] = []
-        budget_total = Decimal("0")
-
-        for item_spec in command.items:
-            item_id = generate_id()
-            items_with_ids.append(
-                ItemCreatedSpec(
-                    item_id=item_id,
-                    name=item_spec.name,
-                    allocated_amount=item_spec.allocated_amount,
-                    flex_class=item_spec.flex_class,
-                    category=item_spec.category,
-                )
-            )
-            budget_total += item_spec.allocated_amount
-
-        # Create event
-        event_payload = BudgetCreated(
-            budget_id=budget_id,
-            law_id=command.law_id,
-            fiscal_year=command.fiscal_year,
-            items=items_with_ids,
-            budget_total=budget_total,
-            created_at=now,
-            created_by=actor_id,
-            metadata=command.metadata,
-        ).model_dump(mode="json")
-
-        event = create_event(
-            event_id=generate_id(),
-            stream_id=budget_id,
-            stream_type="budget",
-            event_type="BudgetCreated",
-            occurred_at=now,
+        with LogOperation(
+            logger,
+            "handle_create_budget",
             command_id=command_id,
             actor_id=actor_id,
-            payload=event_payload,
-            version=1,
-        )
+            law_id=command.law_id,
+            fiscal_year=command.fiscal_year,
+            items_count=len(command.items),
+        ):
+            now = self.time_provider.now()
 
-        return [event]
+            # Validate law exists
+            logger.debug("Validating law exists", law_id=command.law_id)
+            validate_law_exists(command.law_id, law_registry)
+
+            # Generate budget ID
+            budget_id = generate_id()
+
+            # Convert item specs to ItemCreatedSpec with generated IDs
+            items_with_ids: list[ItemCreatedSpec] = []
+            budget_total = Decimal("0")
+
+            for item_spec in command.items:
+                item_id = generate_id()
+                items_with_ids.append(
+                    ItemCreatedSpec(
+                        item_id=item_id,
+                        name=item_spec.name,
+                        allocated_amount=item_spec.allocated_amount,
+                        flex_class=item_spec.flex_class,
+                        category=item_spec.category,
+                    )
+                )
+                budget_total += item_spec.allocated_amount
+
+            # Create event
+            event_payload = BudgetCreated(
+                budget_id=budget_id,
+                law_id=command.law_id,
+                fiscal_year=command.fiscal_year,
+                items=items_with_ids,
+                budget_total=budget_total,
+                created_at=now,
+                created_by=actor_id,
+                metadata=command.metadata,
+            ).model_dump(mode="json")
+
+            event = create_event(
+                event_id=generate_id(),
+                stream_id=budget_id,
+                stream_type="budget",
+                event_type="BudgetCreated",
+                occurred_at=now,
+                command_id=command_id,
+                actor_id=actor_id,
+                payload=event_payload,
+                version=1,
+            )
+
+            logger.info("Budget created", budget_id=budget_id, budget_total=str(budget_total))
+            return [event]
 
     def handle_activate_budget(
         self,
@@ -175,35 +189,44 @@ class BudgetCommandHandlers:
         Raises:
             BudgetNotFound: If budget doesn't exist
         """
-        now = self.time_provider.now()
-
-        # Validate budget exists
-        if command.budget_id not in budget_registry:
-            raise BudgetNotFound(command.budget_id)
-
-        budget = budget_registry[command.budget_id]
-        current_version = budget.get("version", 1)
-
-        # Create event
-        event_payload = BudgetActivated(
-            budget_id=command.budget_id,
-            activated_at=now,
-            activated_by=actor_id,
-        ).model_dump(mode="json")
-
-        event = create_event(
-            event_id=generate_id(),
-            stream_id=command.budget_id,
-            stream_type="budget",
-            event_type="BudgetActivated",
-            occurred_at=now,
+        with LogOperation(
+            logger,
+            "handle_activate_budget",
             command_id=command_id,
             actor_id=actor_id,
-            payload=event_payload,
-            version=current_version + 1,
-        )
+            budget_id=command.budget_id,
+        ):
+            now = self.time_provider.now()
 
-        return [event]
+            # Validate budget exists
+            if command.budget_id not in budget_registry:
+                logger.warning("Budget not found", budget_id=command.budget_id)
+                raise BudgetNotFound(command.budget_id)
+
+            budget = budget_registry[command.budget_id]
+            current_version = budget.get("version", 1)
+
+            # Create event
+            event_payload = BudgetActivated(
+                budget_id=command.budget_id,
+                activated_at=now,
+                activated_by=actor_id,
+            ).model_dump(mode="json")
+
+            event = create_event(
+                event_id=generate_id(),
+                stream_id=command.budget_id,
+                stream_type="budget",
+                event_type="BudgetActivated",
+                occurred_at=now,
+                command_id=command_id,
+                actor_id=actor_id,
+                payload=event_payload,
+                version=current_version + 1,
+            )
+
+            logger.info("Budget activated", budget_id=command.budget_id)
+            return [event]
 
     def handle_adjust_allocation(
         self,
@@ -238,98 +261,112 @@ class BudgetCommandHandlers:
             AllocationBelowSpending: If adjustment creates overspending (Gate 4)
             BudgetItemNotFound: If item doesn't exist
         """
-        now = self.time_provider.now()
-
-        # Validate budget exists
-        if command.budget_id not in budget_registry:
-            raise BudgetNotFound(command.budget_id)
-
-        budget_data = budget_registry[command.budget_id]
-        current_version = budget_data.get("version", 1)
-
-        # Reconstruct Budget model from projection data
-        budget = Budget(
-            budget_id=budget_data["budget_id"],
-            law_id=budget_data["law_id"],
-            fiscal_year=budget_data["fiscal_year"],
-            items={
-                item_id: BudgetItem(**item_data)
-                for item_id, item_data in budget_data["items"].items()
-            },
-            budget_total=Decimal(str(budget_data["budget_total"])),
-            status=budget_data["status"],
-            created_at=budget_data["created_at"],
-            activated_at=budget_data.get("activated_at"),
-            closed_at=budget_data.get("closed_at"),
-            metadata=budget_data.get("metadata", {}),
-        )
-
-        # ========== MULTI-GATE ENFORCEMENT ==========
-
-        # GATE 1: Validate step-size limits for each adjustment
-        for adj in command.adjustments:
-            # Verify item exists
-            item = validate_budget_item_exists(budget, adj.item_id)
-
-            # Validate flex class step-size limit
-            validate_flex_step_size(item, adj.change_amount, item.flex_class)
-
-        # GATE 2: Validate budget balance (zero-sum constraint)
-        adjustments_dict = [
-            {"item_id": adj.item_id, "change_amount": adj.change_amount}
-            for adj in command.adjustments
-        ]
-        validate_budget_balance(budget.items, adjustments_dict, budget.budget_total)
-
-        # GATE 4: Validate no overspending after adjustment
-        for adj in command.adjustments:
-            item = budget.items[adj.item_id]
-            new_allocation = item.allocated_amount + adj.change_amount
-            validate_no_overspending_after_adjustment(item, new_allocation)
-
-        # GATE 3: Delegation authority - enforced by FTL façade before calling this handler
-
-        # ========== All gates passed - create event ==========
-
-        # Build adjustment specs for event
-        adjustment_specs: list[AllocationAdjustmentSpec] = []
-        for adj in command.adjustments:
-            item = budget.items[adj.item_id]
-            old_amount = item.allocated_amount
-            new_amount = old_amount + adj.change_amount
-
-            adjustment_specs.append(
-                AllocationAdjustmentSpec(
-                    item_id=adj.item_id,
-                    old_amount=old_amount,
-                    new_amount=new_amount,
-                    change_amount=adj.change_amount,
-                )
-            )
-
-        # Create event
-        event_payload = AllocationAdjusted(
-            budget_id=command.budget_id,
-            adjusted_at=now,
-            adjustments=adjustment_specs,
-            reason=command.reason,
-            adjusted_by=actor_id,
-            gates_validated=["step_size", "balance", "authority", "no_overspend"],
-        ).model_dump(mode="json")
-
-        event = create_event(
-            event_id=generate_id(),
-            stream_id=command.budget_id,
-            stream_type="budget",
-            event_type="AllocationAdjusted",
-            occurred_at=now,
+        with LogOperation(
+            logger,
+            "handle_adjust_allocation",
             command_id=command_id,
             actor_id=actor_id,
-            payload=event_payload,
-            version=current_version + 1,
-        )
+            budget_id=command.budget_id,
+            adjustments_count=len(command.adjustments),
+        ):
+            now = self.time_provider.now()
 
-        return [event]
+            # Validate budget exists
+            if command.budget_id not in budget_registry:
+                logger.warning("Budget not found", budget_id=command.budget_id)
+                raise BudgetNotFound(command.budget_id)
+
+            budget_data = budget_registry[command.budget_id]
+            current_version = budget_data.get("version", 1)
+
+            # Reconstruct Budget model from projection data
+            budget = Budget(
+                budget_id=budget_data["budget_id"],
+                law_id=budget_data["law_id"],
+                fiscal_year=budget_data["fiscal_year"],
+                items={
+                    item_id: BudgetItem(**item_data)
+                    for item_id, item_data in budget_data["items"].items()
+                },
+                budget_total=Decimal(str(budget_data["budget_total"])),
+                status=budget_data["status"],
+                created_at=budget_data["created_at"],
+                activated_at=budget_data.get("activated_at"),
+                closed_at=budget_data.get("closed_at"),
+                metadata=budget_data.get("metadata", {}),
+            )
+
+            # ========== MULTI-GATE ENFORCEMENT ==========
+
+            # GATE 1: Validate step-size limits for each adjustment
+            logger.debug("Validating multi-gate enforcement: Gate 1 - step-size limits")
+            for adj in command.adjustments:
+                # Verify item exists
+                item = validate_budget_item_exists(budget, adj.item_id)
+
+                # Validate flex class step-size limit
+                validate_flex_step_size(item, adj.change_amount, item.flex_class)
+
+            # GATE 2: Validate budget balance (zero-sum constraint)
+            logger.debug("Validating multi-gate enforcement: Gate 2 - budget balance")
+            adjustments_dict = [
+                {"item_id": adj.item_id, "change_amount": adj.change_amount}
+                for adj in command.adjustments
+            ]
+            validate_budget_balance(budget.items, adjustments_dict, budget.budget_total)
+
+            # GATE 4: Validate no overspending after adjustment
+            logger.debug("Validating multi-gate enforcement: Gate 4 - no overspending")
+            for adj in command.adjustments:
+                item = budget.items[adj.item_id]
+                new_allocation = item.allocated_amount + adj.change_amount
+                validate_no_overspending_after_adjustment(item, new_allocation)
+
+            # GATE 3: Delegation authority - enforced by FTL façade before calling this handler
+            logger.debug("Multi-gate enforcement: Gate 3 - authority (checked by façade)")
+
+            # ========== All gates passed - create event ==========
+
+            # Build adjustment specs for event
+            adjustment_specs: list[AllocationAdjustmentSpec] = []
+            for adj in command.adjustments:
+                item = budget.items[adj.item_id]
+                old_amount = item.allocated_amount
+                new_amount = old_amount + adj.change_amount
+
+                adjustment_specs.append(
+                    AllocationAdjustmentSpec(
+                        item_id=adj.item_id,
+                        old_amount=old_amount,
+                        new_amount=new_amount,
+                        change_amount=adj.change_amount,
+                    )
+                )
+
+            # Create event
+            event_payload = AllocationAdjusted(
+                budget_id=command.budget_id,
+                adjusted_at=now,
+                adjustments=adjustment_specs,
+                reason=command.reason,
+                adjusted_by=actor_id,
+                gates_validated=["step_size", "balance", "authority", "no_overspend"],
+            ).model_dump(mode="json")
+
+            event = create_event(
+                event_id=generate_id(),
+                stream_id=command.budget_id,
+                stream_type="budget",
+                event_type="AllocationAdjusted",
+                occurred_at=now,
+                command_id=command_id,
+                actor_id=actor_id,
+                payload=event_payload,
+                version=current_version + 1,
+            )
+
+            logger.info("Allocation adjusted (all gates passed)", budget_id=command.budget_id, gates_passed=4)
+            return [event]
 
     def handle_approve_expenditure(
         self,
@@ -362,118 +399,133 @@ class BudgetCommandHandlers:
         Returns:
             List of events to append (either approval or rejection)
         """
-        now = self.time_provider.now()
+        with LogOperation(
+            logger,
+            "handle_approve_expenditure",
+            command_id=command_id,
+            actor_id=actor_id,
+            budget_id=command.budget_id,
+            item_id=command.item_id,
+            amount=str(command.amount),
+        ):
+            now = self.time_provider.now()
 
-        # Try to validate - catch any failure and emit rejection event
-        try:
-            # Validate budget exists
-            if command.budget_id not in budget_registry:
-                raise BudgetNotFound(command.budget_id)
+            # Try to validate - catch any failure and emit rejection event
+            try:
+                # Validate budget exists
+                if command.budget_id not in budget_registry:
+                    logger.warning("Budget not found", budget_id=command.budget_id)
+                    raise BudgetNotFound(command.budget_id)
 
-            budget_data = budget_registry[command.budget_id]
-            current_version = budget_data.get("version", 1)
+                budget_data = budget_registry[command.budget_id]
+                current_version = budget_data.get("version", 1)
 
-            # Reconstruct Budget model from projection data
-            budget = Budget(
-                budget_id=budget_data["budget_id"],
-                law_id=budget_data["law_id"],
-                fiscal_year=budget_data["fiscal_year"],
-                items={
-                    item_id: BudgetItem(**item_data)
-                    for item_id, item_data in budget_data["items"].items()
-                },
-                budget_total=Decimal(str(budget_data["budget_total"])),
-                status=budget_data["status"],
-                created_at=budget_data["created_at"],
-                activated_at=budget_data.get("activated_at"),
-                closed_at=budget_data.get("closed_at"),
-                metadata=budget_data.get("metadata", {}),
-            )
+                # Reconstruct Budget model from projection data
+                budget = Budget(
+                    budget_id=budget_data["budget_id"],
+                    law_id=budget_data["law_id"],
+                    fiscal_year=budget_data["fiscal_year"],
+                    items={
+                        item_id: BudgetItem(**item_data)
+                        for item_id, item_data in budget_data["items"].items()
+                    },
+                    budget_total=Decimal(str(budget_data["budget_total"])),
+                    status=budget_data["status"],
+                    created_at=budget_data["created_at"],
+                    activated_at=budget_data.get("activated_at"),
+                    closed_at=budget_data.get("closed_at"),
+                    metadata=budget_data.get("metadata", {}),
+                )
 
-            # Validate budget is ACTIVE
-            validate_budget_active(budget)
+                # Validate budget is ACTIVE
+                logger.debug("Validating budget is active")
+                validate_budget_active(budget)
 
-            # Validate item exists
-            item = validate_budget_item_exists(budget, command.item_id)
+                # Validate item exists
+                item = validate_budget_item_exists(budget, command.item_id)
 
-            # Validate expenditure limit
-            validate_expenditure_limit(item, command.amount)
+                # Validate expenditure limit
+                logger.debug("Validating expenditure limit", remaining=str(item.remaining_budget()), requested=str(command.amount))
+                validate_expenditure_limit(item, command.amount)
 
-            # ========== All validations passed - APPROVE ==========
+                # ========== All validations passed - APPROVE ==========
 
-            expenditure_id = generate_id()
-            remaining_budget = item.remaining_budget() - command.amount
+                expenditure_id = generate_id()
+                remaining_budget = item.remaining_budget() - command.amount
 
-            event_payload = ExpenditureApproved(
-                budget_id=command.budget_id,
-                item_id=command.item_id,
-                expenditure_id=expenditure_id,
-                amount=command.amount,
-                purpose=command.purpose,
-                approved_at=now,
-                approved_by=actor_id,
-                remaining_budget=remaining_budget,
-                metadata=command.metadata,
-            ).model_dump(mode="json")
+                event_payload = ExpenditureApproved(
+                    budget_id=command.budget_id,
+                    item_id=command.item_id,
+                    expenditure_id=expenditure_id,
+                    amount=command.amount,
+                    purpose=command.purpose,
+                    approved_at=now,
+                    approved_by=actor_id,
+                    remaining_budget=remaining_budget,
+                    metadata=command.metadata,
+                ).model_dump(mode="json")
 
-            event = create_event(
-                event_id=generate_id(),
-                stream_id=command.budget_id,
-                stream_type="budget",
-                event_type="ExpenditureApproved",
-                occurred_at=now,
-                command_id=command_id,
-                actor_id=actor_id,
-                payload=event_payload,
-                version=current_version + 1,
-            )
+                event = create_event(
+                    event_id=generate_id(),
+                    stream_id=command.budget_id,
+                    stream_type="budget",
+                    event_type="ExpenditureApproved",
+                    occurred_at=now,
+                    command_id=command_id,
+                    actor_id=actor_id,
+                    payload=event_payload,
+                    version=current_version + 1,
+                )
 
-            return [event]
+                logger.info("Expenditure approved", expenditure_id=expenditure_id, remaining_budget=str(remaining_budget))
+                return [event]
 
-        except Exception as e:
-            # ========== Validation failed - REJECT ==========
+            except Exception as e:
+                # ========== Validation failed - REJECT ==========
 
-            # Determine which gate failed
-            gate_failed = "unknown"
-            rejection_reason = str(e)
+                # Determine which gate failed
+                gate_failed = "unknown"
+                rejection_reason = str(e)
 
-            if isinstance(e, BudgetNotFound):
-                gate_failed = "budget_not_found"
-            elif "ACTIVE" in str(e):
-                gate_failed = "budget_status"
-            elif "not found" in str(e).lower() and "item" in str(e).lower():
-                gate_failed = "item_not_found"
-            elif "exceeds" in str(e).lower():
-                gate_failed = "insufficient_budget"
+                if isinstance(e, BudgetNotFound):
+                    gate_failed = "budget_not_found"
+                elif "ACTIVE" in str(e):
+                    gate_failed = "budget_status"
+                elif "not found" in str(e).lower() and "item" in str(e).lower():
+                    gate_failed = "item_not_found"
+                elif "exceeds" in str(e).lower():
+                    gate_failed = "insufficient_budget"
 
-            # Get version (may not exist if budget not found)
-            current_version = 1
-            if command.budget_id in budget_registry:
-                current_version = budget_registry[command.budget_id].get("version", 1)
+                logger.warning("Expenditure rejected", gate_failed=gate_failed, reason=rejection_reason)
 
-            event_payload = ExpenditureRejected(
-                budget_id=command.budget_id,
-                item_id=command.item_id,
-                amount=command.amount,
-                purpose=command.purpose,
-                rejected_at=now,
-                rejection_reason=rejection_reason,
-                gate_failed=gate_failed,
-            ).model_dump(mode="json")
+                # Get version (may not exist if budget not found)
+                current_version = 1
+                if command.budget_id in budget_registry:
+                    current_version = budget_registry[command.budget_id].get("version", 1)
 
-            event = create_event(
-                event_id=generate_id(),
-                stream_id=command.budget_id,
-                stream_type="budget",
-                event_type="ExpenditureRejected",
-                occurred_at=now,
-                command_id=command_id,
-                actor_id=actor_id,
-                payload=event_payload,
-                version=current_version + 1,
-            )
+                event_payload = ExpenditureRejected(
+                    budget_id=command.budget_id,
+                    item_id=command.item_id,
+                    amount=command.amount,
+                    purpose=command.purpose,
+                    rejected_at=now,
+                    rejection_reason=rejection_reason,
+                    gate_failed=gate_failed,
+                ).model_dump(mode="json")
 
-            return [event]
+                event = create_event(
+                    event_id=generate_id(),
+                    stream_id=command.budget_id,
+                    stream_type="budget",
+                    event_type="ExpenditureRejected",
+                    occurred_at=now,
+                    command_id=command_id,
+                    actor_id=actor_id,
+                    payload=event_payload,
+                    version=current_version + 1,
+                )
+
+                return [event]
 
     def handle_close_budget(
         self,
@@ -501,45 +553,61 @@ class BudgetCommandHandlers:
         Raises:
             BudgetNotFound: If budget doesn't exist
         """
-        now = self.time_provider.now()
-
-        # Validate budget exists
-        if command.budget_id not in budget_registry:
-            raise BudgetNotFound(command.budget_id)
-
-        budget_data = budget_registry[command.budget_id]
-        current_version = budget_data.get("version", 1)
-
-        # Calculate final totals
-        final_total_allocated = Decimal("0")
-        final_total_spent = Decimal("0")
-
-        for item_data in budget_data["items"].values():
-            final_total_allocated += Decimal(str(item_data["allocated_amount"]))
-            final_total_spent += Decimal(str(item_data["spent_amount"]))
-
-        final_total_remaining = final_total_allocated - final_total_spent
-
-        # Create event
-        event_payload = BudgetClosed(
-            budget_id=command.budget_id,
-            closed_at=now,
-            reason=command.reason,
-            final_total_allocated=final_total_allocated,
-            final_total_spent=final_total_spent,
-            final_total_remaining=final_total_remaining,
-        ).model_dump(mode="json")
-
-        event = create_event(
-            event_id=generate_id(),
-            stream_id=command.budget_id,
-            stream_type="budget",
-            event_type="BudgetClosed",
-            occurred_at=now,
+        with LogOperation(
+            logger,
+            "handle_close_budget",
             command_id=command_id,
             actor_id=actor_id,
-            payload=event_payload,
-            version=current_version + 1,
-        )
+            budget_id=command.budget_id,
+        ):
+            now = self.time_provider.now()
 
-        return [event]
+            # Validate budget exists
+            if command.budget_id not in budget_registry:
+                logger.warning("Budget not found", budget_id=command.budget_id)
+                raise BudgetNotFound(command.budget_id)
+
+            budget_data = budget_registry[command.budget_id]
+            current_version = budget_data.get("version", 1)
+
+            # Calculate final totals
+            final_total_allocated = Decimal("0")
+            final_total_spent = Decimal("0")
+
+            for item_data in budget_data["items"].values():
+                final_total_allocated += Decimal(str(item_data["allocated_amount"]))
+                final_total_spent += Decimal(str(item_data["spent_amount"]))
+
+            final_total_remaining = final_total_allocated - final_total_spent
+
+            logger.debug(
+                "Final budget totals calculated",
+                allocated=str(final_total_allocated),
+                spent=str(final_total_spent),
+                remaining=str(final_total_remaining),
+            )
+
+            # Create event
+            event_payload = BudgetClosed(
+                budget_id=command.budget_id,
+                closed_at=now,
+                reason=command.reason,
+                final_total_allocated=final_total_allocated,
+                final_total_spent=final_total_spent,
+                final_total_remaining=final_total_remaining,
+            ).model_dump(mode="json")
+
+            event = create_event(
+                event_id=generate_id(),
+                stream_id=command.budget_id,
+                stream_type="budget",
+                event_type="BudgetClosed",
+                occurred_at=now,
+                command_id=command_id,
+                actor_id=actor_id,
+                payload=event_payload,
+                version=current_version + 1,
+            )
+
+            logger.info("Budget closed", budget_id=command.budget_id, final_total_spent=str(final_total_spent))
+            return [event]

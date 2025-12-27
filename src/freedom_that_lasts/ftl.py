@@ -41,9 +41,12 @@ from freedom_that_lasts.feedback.projections import FreedomHealthProjection, Saf
 from freedom_that_lasts.kernel.event_store import SQLiteEventStore
 from freedom_that_lasts.kernel.events import create_event
 from freedom_that_lasts.kernel.ids import generate_id
+from freedom_that_lasts.kernel.logging import LogOperation, get_logger
 from freedom_that_lasts.kernel.safety_policy import SafetyPolicy
 from freedom_that_lasts.kernel.tick import TickEngine, TickResult
 from freedom_that_lasts.kernel.time import RealTimeProvider, TimeProvider
+
+logger = get_logger(__name__)
 from freedom_that_lasts.law.commands import (
     ActivateLaw,
     AdjustLaw,
@@ -107,6 +110,8 @@ class FTL:
             safety_policy: Safety policy (uses defaults if None)
             time_provider: Time provider (uses real time if None)
         """
+        logger.info("Initializing FTL system", sqlite_path=str(sqlite_path))
+
         self.sqlite_path = Path(sqlite_path)
         self.safety_policy = safety_policy or SafetyPolicy()
         self.time_provider = time_provider or RealTimeProvider()
@@ -141,9 +146,13 @@ class FTL:
         # Rebuild projections from event store
         self._rebuild_projections()
 
+        logger.info("FTL system initialized successfully")
+
     def _rebuild_projections(self) -> None:
         """Rebuild all projections from event store"""
         all_events = self.event_store.load_all_events()
+        logger.info("Rebuilding projections from event store", event_count=len(all_events))
+
         for event in all_events:
             # Apply to appropriate projections
             if event.event_type in ["WorkspaceCreated", "WorkspaceArchived"]:
@@ -209,20 +218,23 @@ class FTL:
         Returns:
             Workspace dict with workspace_id
         """
-        command = CreateWorkspace(
-            name=name, parent_workspace_id=None, scope=scope or {}
-        )
-        events = self.law_handlers.handle_create_workspace(
-            command, generate_id(), actor_id
-        )
+        with LogOperation(logger, "create_workspace", name=name, actor_id=actor_id):
+            command = CreateWorkspace(
+                name=name, parent_workspace_id=None, scope=scope or {}
+            )
+            events = self.law_handlers.handle_create_workspace(
+                command, generate_id(), actor_id
+            )
 
-        # Store events and update projections
-        for event in events:
-            expected_version = event.version - 1
-            self.event_store.append(event.stream_id, expected_version, [event])
-            self.workspace_registry.apply_event(event)
+            # Store events and update projections
+            for event in events:
+                expected_version = event.version - 1
+                self.event_store.append(event.stream_id, expected_version, [event])
+                self.workspace_registry.apply_event(event)
 
-        return self.workspace_registry.get(events[0].payload["workspace_id"])
+            workspace_id = events[0].payload["workspace_id"]
+            logger.info("Workspace created", workspace_id=workspace_id, name=name)
+            return self.workspace_registry.get(workspace_id)
 
     def list_workspaces(self) -> list[dict[str, Any]]:
         """List all active workspaces"""
@@ -251,27 +263,42 @@ class FTL:
         Returns:
             Delegation dict
         """
-        command = DelegateDecisionRight(
+        with LogOperation(
+            logger,
+            "delegate_decision_right",
             from_actor=from_actor,
-            workspace_id=workspace_id,
             to_actor=to_actor,
+            workspace_id=workspace_id,
             ttl_days=ttl_days,
-        )
-        events = self.law_handlers.handle_delegate_decision_right(
-            command,
-            generate_id(),
-            actor_id or from_actor,
-            self.workspace_registry.to_dict()["workspaces"],
-            self.delegation_graph.get_active_edges(self.time_provider.now()),
-        )
+        ):
+            command = DelegateDecisionRight(
+                from_actor=from_actor,
+                workspace_id=workspace_id,
+                to_actor=to_actor,
+                ttl_days=ttl_days,
+            )
+            events = self.law_handlers.handle_delegate_decision_right(
+                command,
+                generate_id(),
+                actor_id or from_actor,
+                self.workspace_registry.to_dict()["workspaces"],
+                self.delegation_graph.get_active_edges(self.time_provider.now()),
+            )
 
-        # Store events and update projections
-        for event in events:
-            expected_version = event.version - 1
-            self.event_store.append(event.stream_id, expected_version, [event])
-            self.delegation_graph.apply_event(event)
+            # Store events and update projections
+            for event in events:
+                expected_version = event.version - 1
+                self.event_store.append(event.stream_id, expected_version, [event])
+                self.delegation_graph.apply_event(event)
 
-        return self.delegation_graph.get(events[0].payload["delegation_id"])
+            delegation_id = events[0].payload["delegation_id"]
+            logger.info(
+                "Decision right delegated",
+                delegation_id=delegation_id,
+                from_actor=from_actor,
+                to_actor=to_actor,
+            )
+            return self.delegation_graph.get(delegation_id)
 
     # Law operations
 
@@ -300,31 +327,41 @@ class FTL:
         Returns:
             Law dict with law_id
         """
-        if isinstance(reversibility_class, str):
-            reversibility_class = ReversibilityClass(reversibility_class)
-
-        command = CreateLaw(
+        with LogOperation(
+            logger,
+            "create_law",
             workspace_id=workspace_id,
             title=title,
-            scope=scope,
-            reversibility_class=reversibility_class,
-            checkpoints=checkpoints,
-            params=params or {},
-        )
-        events = self.law_handlers.handle_create_law(
-            command,
-            generate_id(),
-            actor_id,
-            self.workspace_registry.to_dict()["workspaces"],
-        )
+            reversibility_class=str(reversibility_class),
+            actor_id=actor_id,
+        ):
+            if isinstance(reversibility_class, str):
+                reversibility_class = ReversibilityClass(reversibility_class)
 
-        # Store events and update projections
-        for event in events:
-            expected_version = event.version - 1
-            self.event_store.append(event.stream_id, expected_version, [event])
-            self.law_registry.apply_event(event)
+            command = CreateLaw(
+                workspace_id=workspace_id,
+                title=title,
+                scope=scope,
+                reversibility_class=reversibility_class,
+                checkpoints=checkpoints,
+                params=params or {},
+            )
+            events = self.law_handlers.handle_create_law(
+                command,
+                generate_id(),
+                actor_id,
+                self.workspace_registry.to_dict()["workspaces"],
+            )
 
-        return self.law_registry.get(events[0].payload["law_id"])
+            # Store events and update projections
+            for event in events:
+                expected_version = event.version - 1
+                self.event_store.append(event.stream_id, expected_version, [event])
+                self.law_registry.apply_event(event)
+
+            law_id = events[0].payload["law_id"]
+            logger.info("Law created", law_id=law_id, title=title)
+            return self.law_registry.get(law_id)
 
     def activate_law(self, law_id: str, actor_id: str = "system") -> dict[str, Any]:
         """
@@ -337,20 +374,22 @@ class FTL:
         Returns:
             Updated law dict
         """
-        command = ActivateLaw(law_id=law_id)
-        law = self.law_registry.get(law_id)
-        current_version = law["version"] if law else 0
+        with LogOperation(logger, "activate_law", law_id=law_id, actor_id=actor_id):
+            command = ActivateLaw(law_id=law_id)
+            law = self.law_registry.get(law_id)
+            current_version = law["version"] if law else 0
 
-        events = self.law_handlers.handle_activate_law(
-            command, generate_id(), actor_id, self.law_registry.to_dict()["laws"]
-        )
+            events = self.law_handlers.handle_activate_law(
+                command, generate_id(), actor_id, self.law_registry.to_dict()["laws"]
+            )
 
-        # Store events and update projections
-        for event in events:
-            self.event_store.append(event.stream_id, current_version, [event])
-            self.law_registry.apply_event(event)
+            # Store events and update projections
+            for event in events:
+                self.event_store.append(event.stream_id, current_version, [event])
+                self.law_registry.apply_event(event)
 
-        return self.law_registry.get(law_id)
+            logger.info("Law activated", law_id=law_id)
+            return self.law_registry.get(law_id)
 
     def complete_review(
         self,
@@ -371,21 +410,29 @@ class FTL:
         Returns:
             Updated law dict
         """
-        command = CompleteLawReview(law_id=law_id, outcome=outcome, notes=notes)
-        law = self.law_registry.get(law_id)
-        current_version = law["version"] if law else 0
+        with LogOperation(
+            logger,
+            "complete_law_review",
+            law_id=law_id,
+            outcome=outcome,
+            actor_id=actor_id,
+        ):
+            command = CompleteLawReview(law_id=law_id, outcome=outcome, notes=notes)
+            law = self.law_registry.get(law_id)
+            current_version = law["version"] if law else 0
 
-        events = self.law_handlers.handle_complete_law_review(
-            command, generate_id(), actor_id, self.law_registry.to_dict()["laws"]
-        )
+            events = self.law_handlers.handle_complete_law_review(
+                command, generate_id(), actor_id, self.law_registry.to_dict()["laws"]
+            )
 
-        # Store events and update projections
-        for event in events:
-            self.event_store.append(event.stream_id, current_version, [event])
-            self.law_registry.apply_event(event)
-            current_version = event.version
+            # Store events and update projections
+            for event in events:
+                self.event_store.append(event.stream_id, current_version, [event])
+                self.law_registry.apply_event(event)
+                current_version = event.version
 
-        return self.law_registry.get(law_id)
+            logger.info("Law review completed", law_id=law_id, outcome=outcome)
+            return self.law_registry.get(law_id)
 
     def list_laws(self, status: str | None = None) -> list[dict[str, Any]]:
         """
@@ -415,35 +462,42 @@ class FTL:
         Returns:
             TickResult with triggered events and health assessment
         """
-        result = self.tick_engine.tick(
-            self.delegation_graph,
-            self.law_registry,
-            self.budget_registry,
-            self.supplier_registry,
-            self.tender_registry,
-        )
+        with LogOperation(logger, "tick"):
+            result = self.tick_engine.tick(
+                self.delegation_graph,
+                self.law_registry,
+                self.budget_registry,
+                self.supplier_registry,
+                self.tender_registry,
+            )
 
-        # Store and apply triggered events
-        for event in result.triggered_events:
-            # Store in event store
-            try:
-                current_version = 0
-                if event.stream_type == "law":
-                    law = self.law_registry.get(event.stream_id)
-                    current_version = law["version"] if law else 0
-                self.event_store.append(event.stream_id, current_version, [event])
-            except Exception:
-                # Event might already exist (idempotency)
-                pass
+            # Store and apply triggered events
+            for event in result.triggered_events:
+                # Store in event store
+                try:
+                    current_version = 0
+                    if event.stream_type == "law":
+                        law = self.law_registry.get(event.stream_id)
+                        current_version = law["version"] if law else 0
+                    self.event_store.append(event.stream_id, current_version, [event])
+                except Exception:
+                    # Event might already exist (idempotency)
+                    pass
 
-            # Apply to projections
-            self.law_registry.apply_event(event)
-            self.safety_event_log.apply_event(event)
+                # Apply to projections
+                self.law_registry.apply_event(event)
+                self.safety_event_log.apply_event(event)
 
-        # Update health projection
-        self.freedom_health_projection.update_health(result.freedom_health)
+            # Update health projection
+            self.freedom_health_projection.update_health(result.freedom_health)
 
-        return result
+            logger.info(
+                "Tick completed",
+                triggered_events=len(result.triggered_events),
+                risk_level=result.freedom_health.risk_level.name,
+                gini_coefficient=round(result.freedom_health.concentration.gini_coefficient, 3),
+            )
+            return result
 
     def health(self) -> FreedomHealthScore:
         """
@@ -452,39 +506,48 @@ class FTL:
         Returns:
             FreedomHealthScore with risk level and metrics
         """
-        # Compute fresh health assessment
-        now = self.time_provider.now()
-        active_edges = self.delegation_graph.get_active_edges(now)
-        in_degree_map = compute_in_degrees(active_edges, now)
-        overdue_laws = self.law_registry.list_overdue_reviews(now)
-        active_laws = self.law_registry.list_active()
+        with LogOperation(logger, "compute_health"):
+            # Compute fresh health assessment
+            now = self.time_provider.now()
+            active_edges = self.delegation_graph.get_active_edges(now)
+            in_degree_map = compute_in_degrees(active_edges, now)
+            overdue_laws = self.law_registry.list_overdue_reviews(now)
+            active_laws = self.law_registry.list_active()
 
-        # Count upcoming reviews
-        from datetime import timedelta
+            # Count upcoming reviews
+            from datetime import timedelta
 
-        upcoming_7d = 0
-        upcoming_30d = 0
-        for law in active_laws:
-            if law.get("next_checkpoint_at"):
-                checkpoint_dt = (
-                    datetime.fromisoformat(law["next_checkpoint_at"])
-                    if isinstance(law["next_checkpoint_at"], str)
-                    else law["next_checkpoint_at"]
-                )
-                if now < checkpoint_dt <= now + timedelta(days=7):
-                    upcoming_7d += 1
-                if now < checkpoint_dt <= now + timedelta(days=30):
-                    upcoming_30d += 1
+            upcoming_7d = 0
+            upcoming_30d = 0
+            for law in active_laws:
+                if law.get("next_checkpoint_at"):
+                    checkpoint_dt = (
+                        datetime.fromisoformat(law["next_checkpoint_at"])
+                        if isinstance(law["next_checkpoint_at"], str)
+                        else law["next_checkpoint_at"]
+                    )
+                    if now < checkpoint_dt <= now + timedelta(days=7):
+                        upcoming_7d += 1
+                    if now < checkpoint_dt <= now + timedelta(days=30):
+                        upcoming_30d += 1
 
-        return compute_freedom_health(
-            in_degree_map=in_degree_map,
-            total_active_laws=len(active_laws),
-            overdue_reviews=len(overdue_laws),
-            upcoming_7d=upcoming_7d,
-            upcoming_30d=upcoming_30d,
-            policy=self.safety_policy,
-            now=now,
-        )
+            health_score = compute_freedom_health(
+                in_degree_map=in_degree_map,
+                total_active_laws=len(active_laws),
+                overdue_reviews=len(overdue_laws),
+                upcoming_7d=upcoming_7d,
+                upcoming_30d=upcoming_30d,
+                policy=self.safety_policy,
+                now=now,
+            )
+
+            logger.debug(
+                "Health computed",
+                risk_level=health_score.risk_level.name,
+                gini=round(health_score.concentration.gini_coefficient, 3),
+                overdue_reviews=len(overdue_laws),
+            )
+            return health_score
 
     def get_safety_events(self, limit: int = 100) -> list[dict[str, Any]]:
         """
@@ -526,35 +589,45 @@ class FTL:
         Raises:
             LawNotFoundForBudget: If law doesn't exist
         """
-        # Convert items to BudgetItemSpec
-        item_specs = [
-            BudgetItemSpec(
-                name=item["name"],
-                allocated_amount=item["allocated_amount"],
-                flex_class=item["flex_class"],
-                category=item.get("category", "general"),
+        with LogOperation(
+            logger,
+            "create_budget",
+            law_id=law_id,
+            fiscal_year=fiscal_year,
+            items_count=len(items),
+            actor_id=actor_id,
+        ):
+            # Convert items to BudgetItemSpec
+            item_specs = [
+                BudgetItemSpec(
+                    name=item["name"],
+                    allocated_amount=item["allocated_amount"],
+                    flex_class=item["flex_class"],
+                    category=item.get("category", "general"),
+                )
+                for item in items
+            ]
+
+            command = CreateBudget(
+                law_id=law_id, fiscal_year=fiscal_year, items=item_specs
             )
-            for item in items
-        ]
 
-        command = CreateBudget(
-            law_id=law_id, fiscal_year=fiscal_year, items=item_specs
-        )
+            events = self.budget_handlers.handle_create_budget(
+                command,
+                generate_id(),
+                actor_id,
+                self.law_registry.to_dict()["laws"],
+            )
 
-        events = self.budget_handlers.handle_create_budget(
-            command,
-            generate_id(),
-            actor_id,
-            self.law_registry.to_dict()["laws"],
-        )
+            # Store events and update projections
+            for event in events:
+                expected_version = event.version - 1
+                self.event_store.append(event.stream_id, expected_version, [event])
+                self.budget_registry.apply_event(event)
 
-        # Store events and update projections
-        for event in events:
-            expected_version = event.version - 1
-            self.event_store.append(event.stream_id, expected_version, [event])
-            self.budget_registry.apply_event(event)
-
-        return self.budget_registry.get(events[0].payload["budget_id"])
+            budget_id = events[0].payload["budget_id"]
+            logger.info("Budget created", budget_id=budget_id, law_id=law_id)
+            return self.budget_registry.get(budget_id)
 
     def activate_budget(
         self, budget_id: str, actor_id: str = "system"
@@ -574,22 +647,26 @@ class FTL:
         Raises:
             BudgetNotFound: If budget doesn't exist
         """
-        command = ActivateBudget(budget_id=budget_id)
+        with LogOperation(
+            logger, "activate_budget", budget_id=budget_id, actor_id=actor_id
+        ):
+            command = ActivateBudget(budget_id=budget_id)
 
-        events = self.budget_handlers.handle_activate_budget(
-            command,
-            generate_id(),
-            actor_id,
-            self.budget_registry.budgets,
-        )
+            events = self.budget_handlers.handle_activate_budget(
+                command,
+                generate_id(),
+                actor_id,
+                self.budget_registry.budgets,
+            )
 
-        # Store events and update projections
-        for event in events:
-            expected_version = event.version - 1
-            self.event_store.append(event.stream_id, expected_version, [event])
-            self.budget_registry.apply_event(event)
+            # Store events and update projections
+            for event in events:
+                expected_version = event.version - 1
+                self.event_store.append(event.stream_id, expected_version, [event])
+                self.budget_registry.apply_event(event)
 
-        return self.budget_registry.get(budget_id)
+            logger.info("Budget activated", budget_id=budget_id)
+            return self.budget_registry.get(budget_id)
 
     def adjust_allocation(
         self,
@@ -622,32 +699,42 @@ class FTL:
             BudgetBalanceViolation: If adjustments break zero-sum
             AllocationBelowSpending: If adjustment creates overspending
         """
-        # Convert adjustments to AdjustmentSpec
-        adjustment_specs = [
-            AdjustmentSpec(
-                item_id=adj["item_id"], change_amount=adj["change_amount"]
+        with LogOperation(
+            logger,
+            "adjust_budget_allocation",
+            budget_id=budget_id,
+            adjustments_count=len(adjustments),
+            actor_id=actor_id,
+        ):
+            # Convert adjustments to AdjustmentSpec
+            adjustment_specs = [
+                AdjustmentSpec(
+                    item_id=adj["item_id"], change_amount=adj["change_amount"]
+                )
+                for adj in adjustments
+            ]
+
+            command = AdjustAllocation(
+                budget_id=budget_id, adjustments=adjustment_specs, reason=reason
             )
-            for adj in adjustments
-        ]
 
-        command = AdjustAllocation(
-            budget_id=budget_id, adjustments=adjustment_specs, reason=reason
-        )
+            events = self.budget_handlers.handle_adjust_allocation(
+                command,
+                generate_id(),
+                actor_id,
+                self.budget_registry.budgets,
+            )
 
-        events = self.budget_handlers.handle_adjust_allocation(
-            command,
-            generate_id(),
-            actor_id,
-            self.budget_registry.budgets,
-        )
+            # Store events and update projections
+            for event in events:
+                expected_version = event.version - 1
+                self.event_store.append(event.stream_id, expected_version, [event])
+                self.budget_registry.apply_event(event)
 
-        # Store events and update projections
-        for event in events:
-            expected_version = event.version - 1
-            self.event_store.append(event.stream_id, expected_version, [event])
-            self.budget_registry.apply_event(event)
-
-        return self.budget_registry.get(budget_id)
+            logger.info(
+                "Budget allocation adjusted", budget_id=budget_id, adjustments_count=len(adjustments)
+            )
+            return self.budget_registry.get(budget_id)
 
     def approve_expenditure(
         self,
@@ -674,29 +761,46 @@ class FTL:
         Returns:
             Budget dict (updated if approved)
         """
-        command = ApproveExpenditure(
+        with LogOperation(
+            logger,
+            "approve_expenditure",
             budget_id=budget_id,
             item_id=item_id,
-            amount=amount,
-            purpose=purpose,
-            metadata=metadata or {},
-        )
+            amount=str(amount),
+            actor_id=actor_id,
+        ):
+            command = ApproveExpenditure(
+                budget_id=budget_id,
+                item_id=item_id,
+                amount=amount,
+                purpose=purpose,
+                metadata=metadata or {},
+            )
 
-        events = self.budget_handlers.handle_approve_expenditure(
-            command,
-            generate_id(),
-            actor_id,
-            self.budget_registry.budgets,
-        )
+            events = self.budget_handlers.handle_approve_expenditure(
+                command,
+                generate_id(),
+                actor_id,
+                self.budget_registry.budgets,
+            )
 
-        # Store events and update projections
-        for event in events:
-            expected_version = event.version - 1
-            self.event_store.append(event.stream_id, expected_version, [event])
-            self.budget_registry.apply_event(event)
-            self.expenditure_log.apply_event(event)
+            # Store events and update projections
+            for event in events:
+                expected_version = event.version - 1
+                self.event_store.append(event.stream_id, expected_version, [event])
+                self.budget_registry.apply_event(event)
+                self.expenditure_log.apply_event(event)
 
-        return self.budget_registry.get(budget_id)
+            # Log whether approved or rejected
+            event_type = events[0].event_type
+            logger.info(
+                "Expenditure processed",
+                budget_id=budget_id,
+                item_id=item_id,
+                amount=str(amount),
+                result=event_type,
+            )
+            return self.budget_registry.get(budget_id)
 
     def close_budget(
         self, budget_id: str, reason: str, actor_id: str = "system"
@@ -717,22 +821,26 @@ class FTL:
         Raises:
             BudgetNotFound: If budget doesn't exist
         """
-        command = CloseBudget(budget_id=budget_id, reason=reason)
+        with LogOperation(
+            logger, "close_budget", budget_id=budget_id, actor_id=actor_id
+        ):
+            command = CloseBudget(budget_id=budget_id, reason=reason)
 
-        events = self.budget_handlers.handle_close_budget(
-            command,
-            generate_id(),
-            actor_id,
-            self.budget_registry.budgets,
-        )
+            events = self.budget_handlers.handle_close_budget(
+                command,
+                generate_id(),
+                actor_id,
+                self.budget_registry.budgets,
+            )
 
-        # Store events and update projections
-        for event in events:
-            expected_version = event.version - 1
-            self.event_store.append(event.stream_id, expected_version, [event])
-            self.budget_registry.apply_event(event)
+            # Store events and update projections
+            for event in events:
+                expected_version = event.version - 1
+                self.event_store.append(event.stream_id, expected_version, [event])
+                self.budget_registry.apply_event(event)
 
-        return self.budget_registry.get(budget_id)
+            logger.info("Budget closed", budget_id=budget_id)
+            return self.budget_registry.get(budget_id)
 
     def list_budgets(
         self, law_id: str | None = None, status: str | None = None
@@ -797,36 +905,45 @@ class FTL:
         Returns:
             Supplier dict
         """
-        command = RegisterSupplier(
+        with LogOperation(
+            logger,
+            "register_supplier",
             name=name,
             supplier_type=supplier_type,
-            metadata=metadata or {},
-        )
-
-        events = self.resource_handlers.handle_register_supplier(
-            command, generate_id(), actor_id
-        )
-
-        # Store events and update projections
-        current_version = 0
-        for event in events:
-            # Create new event with correct version (events are immutable)
-            versioned_event = create_event(
-                event_id=event.event_id,
-                stream_id=event.stream_id,
-                stream_type=event.stream_type,
-                event_type=event.event_type,
-                occurred_at=event.occurred_at,
-                actor_id=event.actor_id,
-                command_id=event.command_id,
-                payload=event.payload,
-                version=current_version + 1,
+            actor_id=actor_id,
+        ):
+            command = RegisterSupplier(
+                name=name,
+                supplier_type=supplier_type,
+                metadata=metadata or {},
             )
-            self.event_store.append(versioned_event.stream_id, current_version, [versioned_event])
-            self.supplier_registry.apply_event(versioned_event)
-            current_version = versioned_event.version
 
-        return self.supplier_registry.get(events[0].stream_id)
+            events = self.resource_handlers.handle_register_supplier(
+                command, generate_id(), actor_id
+            )
+
+            # Store events and update projections
+            current_version = 0
+            for event in events:
+                # Create new event with correct version (events are immutable)
+                versioned_event = create_event(
+                    event_id=event.event_id,
+                    stream_id=event.stream_id,
+                    stream_type=event.stream_type,
+                    event_type=event.event_type,
+                    occurred_at=event.occurred_at,
+                    actor_id=event.actor_id,
+                    command_id=event.command_id,
+                    payload=event.payload,
+                    version=current_version + 1,
+                )
+                self.event_store.append(versioned_event.stream_id, current_version, [versioned_event])
+                self.supplier_registry.apply_event(versioned_event)
+                current_version = versioned_event.version
+
+            supplier_id = events[0].stream_id
+            logger.info("Supplier registered", supplier_id=supplier_id, name=name)
+            return self.supplier_registry.get(supplier_id)
 
     def add_capability_claim(
         self,
@@ -855,46 +972,59 @@ class FTL:
         Returns:
             Updated supplier dict
         """
-        # Convert evidence dicts to EvidenceSpec objects
-        evidence_specs = [EvidenceSpec(**ev) for ev in evidence]
-
-        command = AddCapabilityClaim(
+        with LogOperation(
+            logger,
+            "add_capability_claim",
             supplier_id=supplier_id,
             capability_type=capability_type,
-            scope=scope,
-            valid_from=valid_from,
-            valid_until=valid_until,
-            evidence=evidence_specs,
-            capacity=capacity,
-        )
+            evidence_count=len(evidence),
+            actor_id=actor_id,
+        ):
+            # Convert evidence dicts to EvidenceSpec objects
+            evidence_specs = [EvidenceSpec(**ev) for ev in evidence]
 
-        # Get current version for optimistic locking
-        supplier = self.supplier_registry.get(supplier_id)
-        current_version = supplier["version"] if supplier else 0
-
-        events = self.resource_handlers.handle_add_capability_claim(
-            command, generate_id(), actor_id, self.supplier_registry
-        )
-
-        # Store events and update projections
-        for event in events:
-            # Create new event with correct version (events are immutable)
-            versioned_event = create_event(
-                event_id=event.event_id,
-                stream_id=event.stream_id,
-                stream_type=event.stream_type,
-                event_type=event.event_type,
-                occurred_at=event.occurred_at,
-                actor_id=event.actor_id,
-                command_id=event.command_id,
-                payload=event.payload,
-                version=current_version + 1,
+            command = AddCapabilityClaim(
+                supplier_id=supplier_id,
+                capability_type=capability_type,
+                scope=scope,
+                valid_from=valid_from,
+                valid_until=valid_until,
+                evidence=evidence_specs,
+                capacity=capacity,
             )
-            self.event_store.append(versioned_event.stream_id, current_version, [versioned_event])
-            self.supplier_registry.apply_event(versioned_event)
-            current_version = versioned_event.version
 
-        return self.supplier_registry.get(supplier_id)
+            # Get current version for optimistic locking
+            supplier = self.supplier_registry.get(supplier_id)
+            current_version = supplier["version"] if supplier else 0
+
+            events = self.resource_handlers.handle_add_capability_claim(
+                command, generate_id(), actor_id, self.supplier_registry
+            )
+
+            # Store events and update projections
+            for event in events:
+                # Create new event with correct version (events are immutable)
+                versioned_event = create_event(
+                    event_id=event.event_id,
+                    stream_id=event.stream_id,
+                    stream_type=event.stream_type,
+                    event_type=event.event_type,
+                    occurred_at=event.occurred_at,
+                    actor_id=event.actor_id,
+                    command_id=event.command_id,
+                    payload=event.payload,
+                    version=current_version + 1,
+                )
+                self.event_store.append(versioned_event.stream_id, current_version, [versioned_event])
+                self.supplier_registry.apply_event(versioned_event)
+                current_version = versioned_event.version
+
+            logger.info(
+                "Capability claim added",
+                supplier_id=supplier_id,
+                capability_type=capability_type,
+            )
+            return self.supplier_registry.get(supplier_id)
 
     def create_tender(
         self,
@@ -931,33 +1061,44 @@ class FTL:
         Returns:
             Tender dict
         """
-        # Convert requirement dicts to RequirementSpec objects
-        requirement_specs = [RequirementSpec(**req) for req in requirements]
-
-        command = CreateTender(
+        with LogOperation(
+            logger,
+            "create_tender",
             law_id=law_id,
             title=title,
-            description=description,
-            requirements=requirement_specs,
-            required_capacity=required_capacity,
-            sla_requirements=sla_requirements,
-            evidence_required=evidence_required or [],
-            acceptance_tests=acceptance_tests or [],
-            estimated_value=estimated_value,
-            budget_item_id=budget_item_id,
-            selection_method=selection_method,
-        )
+            requirements_count=len(requirements),
+            selection_method=selection_method.value,
+            actor_id=actor_id,
+        ):
+            # Convert requirement dicts to RequirementSpec objects
+            requirement_specs = [RequirementSpec(**req) for req in requirements]
 
-        events = self.resource_handlers.handle_create_tender(
-            command, generate_id(), actor_id, self.law_registry
-        )
+            command = CreateTender(
+                law_id=law_id,
+                title=title,
+                description=description,
+                requirements=requirement_specs,
+                required_capacity=required_capacity,
+                sla_requirements=sla_requirements,
+                evidence_required=evidence_required or [],
+                acceptance_tests=acceptance_tests or [],
+                estimated_value=estimated_value,
+                budget_item_id=budget_item_id,
+                selection_method=selection_method,
+            )
 
-        # Store events and update projections
-        for event in events:
-            self.event_store.append(event.stream_id, 0, [event])
-            self.tender_registry.apply_event(event)
+            events = self.resource_handlers.handle_create_tender(
+                command, generate_id(), actor_id, self.law_registry
+            )
 
-        return self.tender_registry.get(events[0].stream_id)
+            # Store events and update projections
+            for event in events:
+                self.event_store.append(event.stream_id, 0, [event])
+                self.tender_registry.apply_event(event)
+
+            tender_id = events[0].stream_id
+            logger.info("Tender created", tender_id=tender_id, title=title, law_id=law_id)
+            return self.tender_registry.get(tender_id)
 
     def open_tender(self, tender_id: str, actor_id: str = "system") -> dict[str, Any]:
         """
@@ -970,35 +1111,37 @@ class FTL:
         Returns:
             Updated tender dict
         """
-        command = OpenTender(tender_id=tender_id)
+        with LogOperation(logger, "open_tender", tender_id=tender_id, actor_id=actor_id):
+            command = OpenTender(tender_id=tender_id)
 
-        # Get current version for optimistic locking
-        tender = self.tender_registry.get(tender_id)
-        current_version = tender.get("version", 0) if tender else 0
+            # Get current version for optimistic locking
+            tender = self.tender_registry.get(tender_id)
+            current_version = tender.get("version", 0) if tender else 0
 
-        events = self.resource_handlers.handle_open_tender(
-            command, generate_id(), actor_id, self.tender_registry
-        )
-
-        # Store events and update projections
-        for event in events:
-            # Create new event with correct version (events are immutable)
-            versioned_event = create_event(
-                event_id=event.event_id,
-                stream_id=event.stream_id,
-                stream_type=event.stream_type,
-                event_type=event.event_type,
-                occurred_at=event.occurred_at,
-                actor_id=event.actor_id,
-                command_id=event.command_id,
-                payload=event.payload,
-                version=current_version + 1,
+            events = self.resource_handlers.handle_open_tender(
+                command, generate_id(), actor_id, self.tender_registry
             )
-            self.event_store.append(versioned_event.stream_id, current_version, [versioned_event])
-            self.tender_registry.apply_event(versioned_event)
-            current_version = versioned_event.version
 
-        return self.tender_registry.get(tender_id)
+            # Store events and update projections
+            for event in events:
+                # Create new event with correct version (events are immutable)
+                versioned_event = create_event(
+                    event_id=event.event_id,
+                    stream_id=event.stream_id,
+                    stream_type=event.stream_type,
+                    event_type=event.event_type,
+                    occurred_at=event.occurred_at,
+                    actor_id=event.actor_id,
+                    command_id=event.command_id,
+                    payload=event.payload,
+                    version=current_version + 1,
+                )
+                self.event_store.append(versioned_event.stream_id, current_version, [versioned_event])
+                self.tender_registry.apply_event(versioned_event)
+                current_version = versioned_event.version
+
+            logger.info("Tender opened", tender_id=tender_id)
+            return self.tender_registry.get(tender_id)
 
     def evaluate_tender(
         self,
@@ -1019,43 +1162,52 @@ class FTL:
         Returns:
             Updated tender dict with feasible_suppliers
         """
-        command = EvaluateTender(
-            tender_id=tender_id,
-            evaluation_time=evaluation_time,
-        )
-
-        # Get current version for optimistic locking
-        tender = self.tender_registry.get(tender_id)
-        current_version = tender.get("version", 0) if tender else 0
-
-        events = self.resource_handlers.handle_evaluate_tender(
-            command,
-            generate_id(),
-            actor_id,
-            self.tender_registry,
-            self.supplier_registry,
-        )
-
-        # Store events and update projections
-        for event in events:
-            # Create new event with correct version (events are immutable)
-            versioned_event = create_event(
-                event_id=event.event_id,
-                stream_id=event.stream_id,
-                stream_type=event.stream_type,
-                event_type=event.event_type,
-                occurred_at=event.occurred_at,
-                actor_id=event.actor_id,
-                command_id=event.command_id,
-                payload=event.payload,
-                version=current_version + 1,
+        with LogOperation(logger, "evaluate_tender", tender_id=tender_id, actor_id=actor_id):
+            command = EvaluateTender(
+                tender_id=tender_id,
+                evaluation_time=evaluation_time,
             )
-            self.event_store.append(versioned_event.stream_id, current_version, [versioned_event])
-            self.tender_registry.apply_event(versioned_event)
-            self.procurement_health_projection.apply_event(versioned_event)
-            current_version = versioned_event.version
 
-        return self.tender_registry.get(tender_id)
+            # Get current version for optimistic locking
+            tender = self.tender_registry.get(tender_id)
+            current_version = tender.get("version", 0) if tender else 0
+
+            events = self.resource_handlers.handle_evaluate_tender(
+                command,
+                generate_id(),
+                actor_id,
+                self.tender_registry,
+                self.supplier_registry,
+            )
+
+            # Store events and update projections
+            for event in events:
+                # Create new event with correct version (events are immutable)
+                versioned_event = create_event(
+                    event_id=event.event_id,
+                    stream_id=event.stream_id,
+                    stream_type=event.stream_type,
+                    event_type=event.event_type,
+                    occurred_at=event.occurred_at,
+                    actor_id=event.actor_id,
+                    command_id=event.command_id,
+                    payload=event.payload,
+                    version=current_version + 1,
+                )
+                self.event_store.append(versioned_event.stream_id, current_version, [versioned_event])
+                self.tender_registry.apply_event(versioned_event)
+                self.procurement_health_projection.apply_event(versioned_event)
+                current_version = versioned_event.version
+
+            # Log feasible set result
+            updated_tender = self.tender_registry.get(tender_id)
+            feasible_count = len(updated_tender.get("feasible_suppliers", []))
+            logger.info(
+                "Tender evaluated",
+                tender_id=tender_id,
+                feasible_suppliers_count=feasible_count,
+            )
+            return updated_tender
 
     def select_supplier(
         self,
@@ -1082,42 +1234,58 @@ class FTL:
         Returns:
             Updated tender dict with selected_supplier_id
         """
-        command = SelectSupplier(
+        with LogOperation(
+            logger,
+            "select_supplier",
             tender_id=tender_id,
-            selection_seed=selection_seed,
-        )
-
-        # Get current version for optimistic locking
-        tender = self.tender_registry.get(tender_id)
-        current_version = tender.get("version", 0) if tender else 0
-
-        events = self.resource_handlers.handle_select_supplier(
-            command,
-            generate_id(),
-            actor_id,
-            self.tender_registry,
-            self.supplier_registry,
-        )
-
-        # Store events and update projections
-        for event in events:
-            # Create new event with correct version (events are immutable)
-            versioned_event = create_event(
-                event_id=event.event_id,
-                stream_id=event.stream_id,
-                stream_type=event.stream_type,
-                event_type=event.event_type,
-                occurred_at=event.occurred_at,
-                actor_id=event.actor_id,
-                command_id=event.command_id,
-                payload=event.payload,
-                version=current_version + 1,
+            has_seed=selection_seed is not None,
+            actor_id=actor_id,
+        ):
+            command = SelectSupplier(
+                tender_id=tender_id,
+                selection_seed=selection_seed,
             )
-            self.event_store.append(versioned_event.stream_id, current_version, [versioned_event])
-            self.tender_registry.apply_event(versioned_event)
-            current_version = versioned_event.version
 
-        return self.tender_registry.get(tender_id)
+            # Get current version for optimistic locking
+            tender = self.tender_registry.get(tender_id)
+            current_version = tender.get("version", 0) if tender else 0
+
+            events = self.resource_handlers.handle_select_supplier(
+                command,
+                generate_id(),
+                actor_id,
+                self.tender_registry,
+                self.supplier_registry,
+            )
+
+            # Store events and update projections
+            for event in events:
+                # Create new event with correct version (events are immutable)
+                versioned_event = create_event(
+                    event_id=event.event_id,
+                    stream_id=event.stream_id,
+                    stream_type=event.stream_type,
+                    event_type=event.event_type,
+                    occurred_at=event.occurred_at,
+                    actor_id=event.actor_id,
+                    command_id=event.command_id,
+                    payload=event.payload,
+                    version=current_version + 1,
+                )
+                self.event_store.append(versioned_event.stream_id, current_version, [versioned_event])
+                self.tender_registry.apply_event(versioned_event)
+                current_version = versioned_event.version
+
+            # Log selection result
+            updated_tender = self.tender_registry.get(tender_id)
+            selected_id = updated_tender.get("selected_supplier_id")
+            logger.info(
+                "Supplier selected",
+                tender_id=tender_id,
+                selected_supplier_id=selected_id,
+                event_type=events[0].event_type,
+            )
+            return updated_tender
 
     def award_tender(
         self,
@@ -1138,41 +1306,49 @@ class FTL:
         Returns:
             Updated tender dict
         """
-        command = AwardTender(
+        with LogOperation(
+            logger,
+            "award_tender",
             tender_id=tender_id,
-            contract_value=contract_value,
-            contract_terms=contract_terms,
-        )
+            contract_value=str(contract_value),
+            actor_id=actor_id,
+        ):
+            command = AwardTender(
+                tender_id=tender_id,
+                contract_value=contract_value,
+                contract_terms=contract_terms,
+            )
 
-        # Get current version for optimistic locking
-        tender = self.tender_registry.get(tender_id)
-        current_version = tender.get("version", 0) if tender else 0
+            # Get current version for optimistic locking
+            tender = self.tender_registry.get(tender_id)
+            current_version = tender.get("version", 0) if tender else 0
 
-        events = self.resource_handlers.handle_award_tender(
-            command, generate_id(), actor_id, self.tender_registry
-        )
+            events = self.resource_handlers.handle_award_tender(
+                command, generate_id(), actor_id, self.tender_registry
+            )
 
-        # Store events and update projections
-        for event in events:
-            if event.event_type == "TenderAwarded":
-                # Create new event with correct version (events are immutable)
-                versioned_event = create_event(
-                    event_id=event.event_id,
-                    stream_id=event.stream_id,
-                    stream_type=event.stream_type,
-                    event_type=event.event_type,
-                    occurred_at=event.occurred_at,
-                    actor_id=event.actor_id,
-                    command_id=event.command_id,
-                    payload=event.payload,
-                    version=current_version + 1,
-                )
-                self.event_store.append(versioned_event.stream_id, current_version, [versioned_event])
-                self.tender_registry.apply_event(versioned_event)
-                self.supplier_registry.apply_event(versioned_event)
-                current_version = versioned_event.version
+            # Store events and update projections
+            for event in events:
+                if event.event_type == "TenderAwarded":
+                    # Create new event with correct version (events are immutable)
+                    versioned_event = create_event(
+                        event_id=event.event_id,
+                        stream_id=event.stream_id,
+                        stream_type=event.stream_type,
+                        event_type=event.event_type,
+                        occurred_at=event.occurred_at,
+                        actor_id=event.actor_id,
+                        command_id=event.command_id,
+                        payload=event.payload,
+                        version=current_version + 1,
+                    )
+                    self.event_store.append(versioned_event.stream_id, current_version, [versioned_event])
+                    self.tender_registry.apply_event(versioned_event)
+                    self.supplier_registry.apply_event(versioned_event)
+                    current_version = versioned_event.version
 
-        return self.tender_registry.get(tender_id)
+            logger.info("Tender awarded", tender_id=tender_id, contract_value=str(contract_value))
+            return self.tender_registry.get(tender_id)
 
     def record_milestone(
         self,
@@ -1202,48 +1378,63 @@ class FTL:
         Returns:
             Milestone record dict
         """
-        from freedom_that_lasts.resource.commands import EvidenceSpec, RecordMilestone
-
-        # Convert evidence dicts to EvidenceSpec objects
-        evidence_specs = [EvidenceSpec(**ev) for ev in (evidence or [])]
-
-        command = RecordMilestone(
+        with LogOperation(
+            logger,
+            "record_milestone",
             tender_id=tender_id,
             milestone_id=milestone_id,
             milestone_type=milestone_type,
-            description=description,
-            evidence=evidence_specs,
-            metadata=metadata or {},
-        )
+            evidence_count=len(evidence or []),
+            actor_id=actor_id,
+        ):
+            from freedom_that_lasts.resource.commands import EvidenceSpec, RecordMilestone
 
-        events = self.resource_handlers.handle_record_milestone(
-            command, generate_id(), actor_id, self.tender_registry
-        )
+            # Convert evidence dicts to EvidenceSpec objects
+            evidence_specs = [EvidenceSpec(**ev) for ev in (evidence or [])]
 
-        # Store events and update projections
-        # Milestones use a separate delivery stream to avoid tender version conflicts
-        for event in events:
-            if event.event_type == "MilestoneRecorded":
-                delivery_stream_id = event.stream_id  # Already formatted as delivery-{tender_id}
-                # Get current delivery stream version
-                delivery_events = self.event_store.load_stream(delivery_stream_id)
-                delivery_version = len(delivery_events)  # Next version
+            command = RecordMilestone(
+                tender_id=tender_id,
+                milestone_id=milestone_id,
+                milestone_type=milestone_type,
+                description=description,
+                evidence=evidence_specs,
+                metadata=metadata or {},
+            )
 
-                versioned_event = create_event(
-                    event_id=event.event_id,
-                    stream_id=event.stream_id,
-                    stream_type=event.stream_type,
-                    event_type=event.event_type,
-                    occurred_at=event.occurred_at,
-                    actor_id=event.actor_id,
-                    command_id=event.command_id,
-                    payload=event.payload,
-                    version=delivery_version + 1,
-                )
-                self.event_store.append(delivery_stream_id, delivery_version, [versioned_event])
-                self.delivery_log.apply_event(versioned_event)
+            events = self.resource_handlers.handle_record_milestone(
+                command, generate_id(), actor_id, self.tender_registry
+            )
 
-        return event.payload
+            # Store events and update projections
+            # Milestones use a separate delivery stream to avoid tender version conflicts
+            for event in events:
+                if event.event_type == "MilestoneRecorded":
+                    delivery_stream_id = event.stream_id  # Already formatted as delivery-{tender_id}
+                    # Get current delivery stream version
+                    delivery_events = self.event_store.load_stream(delivery_stream_id)
+                    delivery_version = len(delivery_events)  # Next version
+
+                    versioned_event = create_event(
+                        event_id=event.event_id,
+                        stream_id=event.stream_id,
+                        stream_type=event.stream_type,
+                        event_type=event.event_type,
+                        occurred_at=event.occurred_at,
+                        actor_id=event.actor_id,
+                        command_id=event.command_id,
+                        payload=event.payload,
+                        version=delivery_version + 1,
+                    )
+                    self.event_store.append(delivery_stream_id, delivery_version, [versioned_event])
+                    self.delivery_log.apply_event(versioned_event)
+
+            logger.info(
+                "Milestone recorded",
+                tender_id=tender_id,
+                milestone_id=milestone_id,
+                milestone_type=milestone_type,
+            )
+            return event.payload
 
     def record_sla_breach(
         self,
@@ -1272,45 +1463,59 @@ class FTL:
         Returns:
             SLA breach record dict
         """
-        from freedom_that_lasts.resource.commands import RecordSLABreach
-
-        command = RecordSLABreach(
+        with LogOperation(
+            logger,
+            "record_sla_breach",
             tender_id=tender_id,
             sla_metric=sla_metric,
-            expected_value=expected_value,
-            actual_value=actual_value,
             severity=severity,
-            impact_description=impact_description,
-        )
+            actor_id=actor_id,
+        ):
+            from freedom_that_lasts.resource.commands import RecordSLABreach
 
-        events = self.resource_handlers.handle_record_sla_breach(
-            command, generate_id(), actor_id, self.tender_registry
-        )
+            command = RecordSLABreach(
+                tender_id=tender_id,
+                sla_metric=sla_metric,
+                expected_value=expected_value,
+                actual_value=actual_value,
+                severity=severity,
+                impact_description=impact_description,
+            )
 
-        # Store events and update projections
-        # SLA breaches use a separate delivery stream to avoid tender version conflicts
-        for event in events:
-            if event.event_type == "SLABreachDetected":
-                delivery_stream_id = event.stream_id  # Already formatted as delivery-{tender_id}
-                # Get current delivery stream version
-                delivery_events = self.event_store.load_stream(delivery_stream_id)
-                delivery_version = len(delivery_events)  # Next version
+            events = self.resource_handlers.handle_record_sla_breach(
+                command, generate_id(), actor_id, self.tender_registry
+            )
 
-                versioned_event = create_event(
-                    event_id=event.event_id,
-                    stream_id=event.stream_id,
-                    stream_type=event.stream_type,
-                    event_type=event.event_type,
-                    occurred_at=event.occurred_at,
-                    actor_id=event.actor_id,
-                    command_id=event.command_id,
-                    payload=event.payload,
-                    version=delivery_version + 1,
-                )
-                self.event_store.append(delivery_stream_id, delivery_version, [versioned_event])
-                self.delivery_log.apply_event(versioned_event)
+            # Store events and update projections
+            # SLA breaches use a separate delivery stream to avoid tender version conflicts
+            for event in events:
+                if event.event_type == "SLABreachDetected":
+                    delivery_stream_id = event.stream_id  # Already formatted as delivery-{tender_id}
+                    # Get current delivery stream version
+                    delivery_events = self.event_store.load_stream(delivery_stream_id)
+                    delivery_version = len(delivery_events)  # Next version
 
-        return event.payload
+                    versioned_event = create_event(
+                        event_id=event.event_id,
+                        stream_id=event.stream_id,
+                        stream_type=event.stream_type,
+                        event_type=event.event_type,
+                        occurred_at=event.occurred_at,
+                        actor_id=event.actor_id,
+                        command_id=event.command_id,
+                        payload=event.payload,
+                        version=delivery_version + 1,
+                    )
+                    self.event_store.append(delivery_stream_id, delivery_version, [versioned_event])
+                    self.delivery_log.apply_event(versioned_event)
+
+            logger.info(
+                "SLA breach recorded",
+                tender_id=tender_id,
+                sla_metric=sla_metric,
+                severity=severity,
+            )
+            return event.payload
 
     def complete_tender(
         self,
@@ -1333,63 +1538,78 @@ class FTL:
         Returns:
             Updated tender dict
         """
-        command = CompleteTender(
+        with LogOperation(
+            logger,
+            "complete_tender",
             tender_id=tender_id,
-            completion_report=completion_report,
             final_quality_score=final_quality_score,
-        )
+            actor_id=actor_id,
+        ):
+            command = CompleteTender(
+                tender_id=tender_id,
+                completion_report=completion_report,
+                final_quality_score=final_quality_score,
+            )
 
-        # Get current versions for both tender and supplier
-        tender = self.tender_registry.get(tender_id)
-        tender_version = tender.get("version", 0) if tender else 0
+            # Get current versions for both tender and supplier
+            tender = self.tender_registry.get(tender_id)
+            tender_version = tender.get("version", 0) if tender else 0
 
-        events = self.resource_handlers.handle_complete_tender(
-            command,
-            generate_id(),
-            actor_id,
-            self.tender_registry,
-            self.supplier_registry,
-        )
+            events = self.resource_handlers.handle_complete_tender(
+                command,
+                generate_id(),
+                actor_id,
+                self.tender_registry,
+                self.supplier_registry,
+            )
 
-        # Store events and update projections
-        for event in events:
-            if event.event_type == "TenderCompleted":
-                # Create new event with correct version (events are immutable)
-                versioned_event = create_event(
-                    event_id=event.event_id,
-                    stream_id=event.stream_id,
-                    stream_type=event.stream_type,
-                    event_type=event.event_type,
-                    occurred_at=event.occurred_at,
-                    actor_id=event.actor_id,
-                    command_id=event.command_id,
-                    payload=event.payload,
-                    version=tender_version + 1,
-                )
-                self.event_store.append(versioned_event.stream_id, tender_version, [versioned_event])
-                self.tender_registry.apply_event(versioned_event)
-                self.delivery_log.apply_event(versioned_event)
-                tender_version = versioned_event.version
-            elif event.event_type == "ReputationUpdated":
-                supplier_id = event.stream_id
-                supplier = self.supplier_registry.get(supplier_id)
-                supplier_version = supplier.get("version", 0) if supplier else 0
-                # Create new event with correct version (events are immutable)
-                versioned_event = create_event(
-                    event_id=event.event_id,
-                    stream_id=event.stream_id,
-                    stream_type=event.stream_type,
-                    event_type=event.event_type,
-                    occurred_at=event.occurred_at,
-                    actor_id=event.actor_id,
-                    command_id=event.command_id,
-                    payload=event.payload,
-                    version=supplier_version + 1,
-                )
-                self.event_store.append(supplier_id, supplier_version, [versioned_event])
-                self.supplier_registry.apply_event(versioned_event)
+            # Store events and update projections
+            reputation_updated = False
+            for event in events:
+                if event.event_type == "TenderCompleted":
+                    # Create new event with correct version (events are immutable)
+                    versioned_event = create_event(
+                        event_id=event.event_id,
+                        stream_id=event.stream_id,
+                        stream_type=event.stream_type,
+                        event_type=event.event_type,
+                        occurred_at=event.occurred_at,
+                        actor_id=event.actor_id,
+                        command_id=event.command_id,
+                        payload=event.payload,
+                        version=tender_version + 1,
+                    )
+                    self.event_store.append(versioned_event.stream_id, tender_version, [versioned_event])
+                    self.tender_registry.apply_event(versioned_event)
+                    self.delivery_log.apply_event(versioned_event)
+                    tender_version = versioned_event.version
+                elif event.event_type == "ReputationUpdated":
+                    supplier_id = event.stream_id
+                    supplier = self.supplier_registry.get(supplier_id)
+                    supplier_version = supplier.get("version", 0) if supplier else 0
+                    # Create new event with correct version (events are immutable)
+                    versioned_event = create_event(
+                        event_id=event.event_id,
+                        stream_id=event.stream_id,
+                        stream_type=event.stream_type,
+                        event_type=event.event_type,
+                        occurred_at=event.occurred_at,
+                        actor_id=event.actor_id,
+                        command_id=event.command_id,
+                        payload=event.payload,
+                        version=supplier_version + 1,
+                    )
+                    self.event_store.append(supplier_id, supplier_version, [versioned_event])
+                    self.supplier_registry.apply_event(versioned_event)
+                    reputation_updated = True
 
-        return self.tender_registry.get(tender_id)
+            logger.info(
+                "Tender completed",
+                tender_id=tender_id,
+                final_quality_score=final_quality_score,
+                reputation_updated=reputation_updated,
+            )
+            return self.tender_registry.get(tender_id)
 
     def list_suppliers(
         self, capability_type: str | None = None

@@ -24,6 +24,15 @@ from freedom_that_lasts.kernel.errors import (
     StreamVersionConflict,
 )
 from freedom_that_lasts.kernel.events import Event
+from freedom_that_lasts.kernel.logging import LogOperation, get_logger
+from freedom_that_lasts.kernel.metrics import (
+    events_appended_total,
+    events_loaded_total,
+    stream_version_conflicts_total,
+)
+from freedom_that_lasts.kernel.retry import retry_on_sqlite_lock
+
+logger = get_logger(__name__)
 
 
 class SQLiteEventStore:
@@ -47,7 +56,9 @@ class SQLiteEventStore:
             db_path: Path to SQLite database file
         """
         self.db_path = Path(db_path)
+        logger.info("Initializing event store", db_path=str(self.db_path))
         self._initialize_schema()
+        logger.info("Event store initialized successfully")
 
     def _initialize_schema(self) -> None:
         """Create tables and indices if they don't exist"""
@@ -104,6 +115,7 @@ class SQLiteEventStore:
         finally:
             conn.close()
 
+    @retry_on_sqlite_lock(max_attempts=3, min_wait_ms=100, max_wait_ms=1000)
     def append(
         self,
         stream_id: str,
@@ -134,21 +146,58 @@ class SQLiteEventStore:
         if not events:
             return []
 
-        # Check idempotency first - if command already processed FOR THIS STREAM, return existing events
-        # NOTE: Same command can produce events in multiple streams (e.g., CompleteTender -> TenderCompleted + ReputationUpdated)
-        first_command_id = events[0].command_id
-        existing_events = self._get_events_by_command_id(first_command_id)
-        # Filter to only events in THIS stream
-        existing_events_in_stream = [e for e in existing_events if e.stream_id == stream_id]
-        if existing_events_in_stream:
-            # Command already processed FOR THIS STREAM - this is SUCCESS (idempotency)
-            return existing_events_in_stream
+        # Log the append operation with context
+        stream_type = events[0].stream_type
+        event_types = [e.event_type for e in events]
+
+        with LogOperation(
+            logger,
+            "append_events",
+            stream_id=stream_id,
+            stream_type=stream_type,
+            expected_version=expected_version,
+            event_count=len(events),
+            event_types=event_types,
+        ):
+            # Check idempotency first - if command already processed FOR THIS STREAM, return existing events
+            # NOTE: Same command can produce events in multiple streams (e.g., CompleteTender -> TenderCompleted + ReputationUpdated)
+            first_command_id = events[0].command_id
+            existing_events = self._get_events_by_command_id(first_command_id)
+            # Filter to only events in THIS stream
+            existing_events_in_stream = [e for e in existing_events if e.stream_id == stream_id]
+            if existing_events_in_stream:
+                # Command already processed FOR THIS STREAM - this is SUCCESS (idempotency)
+                logger.info(
+                    "Command already processed (idempotent)",
+                    command_id=first_command_id,
+                    stream_id=stream_id,
+                )
+                return existing_events_in_stream
+
+            return self._append_with_locking(stream_id, expected_version, events)
+
+    def _append_with_locking(
+        self,
+        stream_id: str,
+        expected_version: int,
+        events: list[Event],
+    ) -> list[Event]:
+        """Internal append with optimistic locking check."""
+        stream_type = events[0].stream_type
 
         with self._connect() as conn:
             try:
                 # Verify stream version matches expected (optimistic locking)
                 current_version = self._get_stream_version(conn, stream_id)
                 if current_version != expected_version:
+                    # Track version conflict metric
+                    stream_version_conflicts_total.labels(stream_type=stream_type).inc()
+                    logger.warning(
+                        "Stream version conflict",
+                        stream_id=stream_id,
+                        expected=expected_version,
+                        actual=current_version,
+                    )
                     raise StreamVersionConflict(stream_id, expected_version, current_version)
 
                 # Append all events in a single transaction
@@ -173,7 +222,13 @@ class SQLiteEventStore:
                         ),
                     )
 
+                    # Track metrics for each event
+                    events_appended_total.labels(
+                        stream_type=event.stream_type, event_type=event.event_type
+                    ).inc()
+
                 conn.commit()
+                logger.info("Events appended successfully", event_count=len(events))
                 return events
 
             except sqlite3.IntegrityError as e:
@@ -228,7 +283,20 @@ class SQLiteEventStore:
                 (stream_id,),
             )
 
-            return [self._row_to_event(row) for row in cursor.fetchall()]
+            events = [self._row_to_event(row) for row in cursor.fetchall()]
+
+            # Track metrics if events loaded
+            if events:
+                stream_type = events[0].stream_type
+                events_loaded_total.labels(stream_type=stream_type).inc(len(events))
+                logger.debug(
+                    "Loaded stream",
+                    stream_id=stream_id,
+                    stream_type=stream_type,
+                    event_count=len(events),
+                )
+
+            return events
 
     def load_all_events(
         self,

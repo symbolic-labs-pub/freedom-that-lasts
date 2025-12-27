@@ -1,0 +1,163 @@
+# ============================================================================
+# Prometheus Alert Rules for Freedom That Lasts
+# ============================================================================
+
+groups:
+  # ============================================================================
+  # Critical Alerts (HIGH severity)
+  # ============================================================================
+  - name: ftl_critical_alerts
+    interval: 30s
+    rules:
+      # Risk level is RED (2)
+      - alert: FTLRiskLevelRed
+        expr: ftl_risk_level >= 2
+        for: 1m
+        labels:
+          severity: critical
+          component: governance
+        annotations:
+          summary: "FTL Risk Level is RED"
+          description: "Freedom That Lasts risk level has reached RED ({{ $value }}). Immediate governance intervention required."
+
+      # Event store is down
+      - alert: FTLEventStoreDown
+        expr: up{job="freedom-that-lasts"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "FTL service is down"
+          description: "Freedom That Lasts service has been down for more than 1 minute."
+
+      # High error rate in command processing
+      - alert: FTLHighErrorRate
+        expr: |
+          (
+            sum(rate(ftl_commands_processed_total{status="failure"}[5m]))
+            /
+            sum(rate(ftl_commands_processed_total[5m]))
+          ) > 0.10
+        for: 5m
+        labels:
+          severity: critical
+          component: commands
+        annotations:
+          summary: "High command failure rate"
+          description: "Command failure rate is {{ $value | humanizePercentage }} (>10%) over the last 5 minutes."
+
+  # ============================================================================
+  # Warning Alerts (MEDIUM severity)
+  # ============================================================================
+  - name: ftl_warning_alerts
+    interval: 1m
+    rules:
+      # Risk level is YELLOW (1)
+      - alert: FTLRiskLevelYellow
+        expr: ftl_risk_level == 1
+        for: 5m
+        labels:
+          severity: warning
+          component: governance
+        annotations:
+          summary: "FTL Risk Level is YELLOW"
+          description: "Freedom That Lasts risk level has been YELLOW for 5 minutes. Review governance health."
+
+      # Laws overdue for review
+      - alert: FTLOverdueReviews
+        expr: ftl_laws_overdue_review_total > 0
+        for: 1h
+        labels:
+          severity: warning
+          component: governance
+        annotations:
+          summary: "Laws overdue for review"
+          description: "{{ $value }} laws are overdue for review in workspace {{ $labels.workspace_id }}."
+
+      # Empty feasible supplier set
+      - alert: FTLEmptyFeasibleSet
+        expr: rate(ftl_feasible_set_empty_total[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: procurement
+        annotations:
+          summary: "Empty feasible supplier sets detected"
+          description: "Procurement process is halted due to empty feasible sets in law {{ $labels.law_id }}."
+
+      # High delegation concentration (Gini coefficient)
+      - alert: FTLHighDelegationConcentration
+        expr: ftl_delegation_gini_coefficient > 0.70
+        for: 10m
+        labels:
+          severity: warning
+          component: governance
+        annotations:
+          summary: "High delegation concentration detected"
+          description: "Delegation Gini coefficient is {{ $value }} (>0.70) in workspace {{ $labels.workspace_id }}."
+
+  # ============================================================================
+  # Performance Alerts
+  # ============================================================================
+  - name: ftl_performance_alerts
+    interval: 1m
+    rules:
+      # Slow command processing
+      - alert: FTLSlowCommandProcessing
+        expr: |
+          histogram_quantile(0.95,
+            rate(ftl_command_duration_seconds_bucket[5m])
+          ) > 5.0
+        for: 5m
+        labels:
+          severity: warning
+          component: performance
+        annotations:
+          summary: "Slow command processing"
+          description: "95th percentile command duration is {{ $value }}s (>5s) for {{ $labels.command_type }}."
+
+      # High event store write latency
+      - alert: FTLHighEventStoreLatency
+        expr: |
+          rate(ftl_events_appended_total[1m]) > 0 and
+          histogram_quantile(0.95,
+            rate(ftl_event_store_duration_seconds_bucket[5m])
+          ) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+          component: performance
+        annotations:
+          summary: "High event store write latency"
+          description: "95th percentile event store write latency is {{ $value }}s (>1s)."
+
+  # ============================================================================
+  # Health Alerts
+  # ============================================================================
+  - name: ftl_health_alerts
+    interval: 30s
+    rules:
+      # Service unhealthy
+      - alert: FTLServiceUnhealthy
+        expr: |
+          probe_success{job="freedom-that-lasts-health"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "FTL health check failing"
+          description: "Health check endpoint is failing for more than 2 minutes."
+
+      # Stream version conflicts
+      - alert: FTLHighVersionConflicts
+        expr: |
+          rate(ftl_stream_version_conflicts_total[5m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+          component: concurrency
+        annotations:
+          summary: "High rate of version conflicts"
+          description: "Stream version conflicts occurring at {{ $value }} per second for {{ $labels.stream_type }}."

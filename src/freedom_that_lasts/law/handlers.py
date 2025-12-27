@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from freedom_that_lasts.kernel.errors import DelegationNotFound, LawNotFound
 from freedom_that_lasts.kernel.events import Event, create_event
 from freedom_that_lasts.kernel.ids import generate_id
+from freedom_that_lasts.kernel.logging import LogOperation, get_logger
 from freedom_that_lasts.kernel.safety_policy import SafetyPolicy
 from freedom_that_lasts.kernel.time import TimeProvider
 from freedom_that_lasts.law.commands import (
@@ -40,6 +41,8 @@ from freedom_that_lasts.law.invariants import (
     validate_delegation_ttl,
     validate_law_activation,
 )
+
+logger = get_logger(__name__)
 
 
 class LawCommandHandlers:
@@ -82,31 +85,39 @@ class LawCommandHandlers:
         Returns:
             List of events to append
         """
-        now = self.time_provider.now()
-        workspace_id = generate_id()
-
-        # Create event
-        event_payload = WorkspaceCreated(
-            workspace_id=workspace_id,
-            name=command.name,
-            parent_workspace_id=command.parent_workspace_id,
-            scope=command.scope,
-            created_at=now,
-        ).model_dump(mode="json")
-
-        event = create_event(
-            event_id=generate_id(),
-            stream_id=workspace_id,
-            stream_type="workspace",
-            event_type="WorkspaceCreated",
-            occurred_at=now,
+        with LogOperation(
+            logger,
+            "handle_create_workspace",
             command_id=command_id,
             actor_id=actor_id,
-            payload=event_payload,
-            version=1,
-        )
+            workspace_name=command.name,
+        ):
+            now = self.time_provider.now()
+            workspace_id = generate_id()
 
-        return [event]
+            # Create event
+            event_payload = WorkspaceCreated(
+                workspace_id=workspace_id,
+                name=command.name,
+                parent_workspace_id=command.parent_workspace_id,
+                scope=command.scope,
+                created_at=now,
+            ).model_dump(mode="json")
+
+            event = create_event(
+                event_id=generate_id(),
+                stream_id=workspace_id,
+                stream_type="workspace",
+                event_type="WorkspaceCreated",
+                occurred_at=now,
+                command_id=command_id,
+                actor_id=actor_id,
+                payload=event_payload,
+                version=1,
+            )
+
+            logger.info("Workspace created", workspace_id=workspace_id)
+            return [event]
 
     def handle_delegate_decision_right(
         self,
@@ -139,59 +150,73 @@ class LawCommandHandlers:
             WorkspaceNotFound: If workspace doesn't exist
             DelegationCycleDetected: If would create cycle
         """
-        now = self.time_provider.now()
-
-        # Validate TTL
-        validate_delegation_ttl(command.ttl_days, self.safety_policy)
-
-        # Validate workspace exists
-        if command.workspace_id not in workspace_registry:
-            from freedom_that_lasts.kernel.errors import WorkspaceNotFound
-
-            raise WorkspaceNotFound(command.workspace_id)
-
-        # Validate acyclic graph
-        validate_acyclic_delegation(
-            delegation_edges,
-            command.from_actor,
-            command.to_actor,
-            now,
-        )
-
-        # Generate delegation ID and compute expiry
-        delegation_id = generate_id()
-        expires_at = now + timedelta(days=command.ttl_days)
-
-        # Use policy default if visibility not specified
-        visibility = command.visibility or self.safety_policy.delegation_visibility_default
-
-        # Create event
-        event_payload = DecisionRightDelegated(
-            delegation_id=delegation_id,
+        with LogOperation(
+            logger,
+            "handle_delegate_decision_right",
+            command_id=command_id,
+            actor_id=actor_id,
             workspace_id=command.workspace_id,
             from_actor=command.from_actor,
             to_actor=command.to_actor,
-            delegated_at=now,
             ttl_days=command.ttl_days,
-            expires_at=expires_at,
-            renewable=command.renewable,
-            visibility=visibility,
-            purpose_tag=command.purpose_tag,
-        ).model_dump(mode="json")
+        ):
+            now = self.time_provider.now()
 
-        event = create_event(
-            event_id=generate_id(),
-            stream_id=delegation_id,
-            stream_type="delegation",
-            event_type="DecisionRightDelegated",
-            occurred_at=now,
-            command_id=command_id,
-            actor_id=actor_id,
-            payload=event_payload,
-            version=1,
-        )
+            # Validate TTL
+            logger.debug("Validating delegation TTL", ttl_days=command.ttl_days)
+            validate_delegation_ttl(command.ttl_days, self.safety_policy)
 
-        return [event]
+            # Validate workspace exists
+            if command.workspace_id not in workspace_registry:
+                from freedom_that_lasts.kernel.errors import WorkspaceNotFound
+
+                logger.warning("Workspace not found", workspace_id=command.workspace_id)
+                raise WorkspaceNotFound(command.workspace_id)
+
+            # Validate acyclic graph
+            logger.debug("Validating acyclic delegation graph")
+            validate_acyclic_delegation(
+                delegation_edges,
+                command.from_actor,
+                command.to_actor,
+                now,
+            )
+
+            # Generate delegation ID and compute expiry
+            delegation_id = generate_id()
+            expires_at = now + timedelta(days=command.ttl_days)
+
+            # Use policy default if visibility not specified
+            visibility = command.visibility or self.safety_policy.delegation_visibility_default
+
+            # Create event
+            event_payload = DecisionRightDelegated(
+                delegation_id=delegation_id,
+                workspace_id=command.workspace_id,
+                from_actor=command.from_actor,
+                to_actor=command.to_actor,
+                delegated_at=now,
+                ttl_days=command.ttl_days,
+                expires_at=expires_at,
+                renewable=command.renewable,
+                visibility=visibility,
+                purpose_tag=command.purpose_tag,
+            ).model_dump(mode="json")
+
+            event = create_event(
+                event_id=generate_id(),
+                stream_id=delegation_id,
+                stream_type="delegation",
+                event_type="DecisionRightDelegated",
+                occurred_at=now,
+                command_id=command_id,
+                actor_id=actor_id,
+                payload=event_payload,
+                version=1,
+            )
+
+            logger.info("Delegation created", delegation_id=delegation_id, expires_at=expires_at.isoformat())
+            return [event]
 
     def handle_revoke_delegation(
         self,
@@ -215,39 +240,48 @@ class LawCommandHandlers:
         Raises:
             DelegationNotFound: If delegation doesn't exist
         """
-        now = self.time_provider.now()
-
-        # Validate delegation exists
-        if command.delegation_id not in delegation_registry:
-            raise DelegationNotFound(command.delegation_id)
-
-        # Get current version from registry
-        delegation = delegation_registry[command.delegation_id]
-        current_version = delegation.get("version", 1)
-
-        # Create event
-        from freedom_that_lasts.law.events import DelegationRevoked
-
-        event_payload = DelegationRevoked(
-            delegation_id=command.delegation_id,
-            revoked_at=now,
-            revoked_by=actor_id or "system",
-            reason=command.reason,
-        ).model_dump(mode="json")
-
-        event = create_event(
-            event_id=generate_id(),
-            stream_id=command.delegation_id,
-            stream_type="delegation",
-            event_type="DelegationRevoked",
-            occurred_at=now,
+        with LogOperation(
+            logger,
+            "handle_revoke_delegation",
             command_id=command_id,
             actor_id=actor_id,
-            payload=event_payload,
-            version=current_version + 1,
-        )
+            delegation_id=command.delegation_id,
+        ):
+            now = self.time_provider.now()
 
-        return [event]
+            # Validate delegation exists
+            if command.delegation_id not in delegation_registry:
+                logger.warning("Delegation not found", delegation_id=command.delegation_id)
+                raise DelegationNotFound(command.delegation_id)
+
+            # Get current version from registry
+            delegation = delegation_registry[command.delegation_id]
+            current_version = delegation.get("version", 1)
+
+            # Create event
+            from freedom_that_lasts.law.events import DelegationRevoked
+
+            event_payload = DelegationRevoked(
+                delegation_id=command.delegation_id,
+                revoked_at=now,
+                revoked_by=actor_id or "system",
+                reason=command.reason,
+            ).model_dump(mode="json")
+
+            event = create_event(
+                event_id=generate_id(),
+                stream_id=command.delegation_id,
+                stream_type="delegation",
+                event_type="DelegationRevoked",
+                occurred_at=now,
+                command_id=command_id,
+                actor_id=actor_id,
+                payload=event_payload,
+                version=current_version + 1,
+            )
+
+            logger.info("Delegation revoked", delegation_id=command.delegation_id, reason=command.reason)
+            return [event]
 
     def handle_create_law(
         self,
@@ -276,45 +310,56 @@ class LawCommandHandlers:
             WorkspaceNotFound: If workspace doesn't exist
             InvalidCheckpointSchedule: If checkpoints don't meet minimums
         """
-        now = self.time_provider.now()
-
-        # Validate workspace and checkpoints
-        validate_law_activation(
-            command.workspace_id,
-            command.checkpoints,
-            workspace_registry,
-            self.safety_policy,
-        )
-
-        # Generate law ID
-        law_id = generate_id()
-
-        # Create event
-        event_payload = LawCreated(
-            law_id=law_id,
-            workspace_id=command.workspace_id,
-            title=command.title,
-            scope=command.scope,
-            reversibility_class=command.reversibility_class,
-            checkpoints=command.checkpoints,
-            params=command.params,
-            created_at=now,
-            created_by=actor_id,
-        ).model_dump(mode="json")
-
-        event = create_event(
-            event_id=generate_id(),
-            stream_id=law_id,
-            stream_type="law",
-            event_type="LawCreated",
-            occurred_at=now,
+        with LogOperation(
+            logger,
+            "handle_create_law",
             command_id=command_id,
             actor_id=actor_id,
-            payload=event_payload,
-            version=1,
-        )
+            workspace_id=command.workspace_id,
+            title=command.title,
+            reversibility_class=command.reversibility_class,
+        ):
+            now = self.time_provider.now()
 
-        return [event]
+            # Validate workspace and checkpoints
+            logger.debug("Validating law activation", workspace_id=command.workspace_id, checkpoints=len(command.checkpoints))
+            validate_law_activation(
+                command.workspace_id,
+                command.checkpoints,
+                workspace_registry,
+                self.safety_policy,
+            )
+
+            # Generate law ID
+            law_id = generate_id()
+
+            # Create event
+            event_payload = LawCreated(
+                law_id=law_id,
+                workspace_id=command.workspace_id,
+                title=command.title,
+                scope=command.scope,
+                reversibility_class=command.reversibility_class,
+                checkpoints=command.checkpoints,
+                params=command.params,
+                created_at=now,
+                created_by=actor_id,
+            ).model_dump(mode="json")
+
+            event = create_event(
+                event_id=generate_id(),
+                stream_id=law_id,
+                stream_type="law",
+                event_type="LawCreated",
+                occurred_at=now,
+                command_id=command_id,
+                actor_id=actor_id,
+                payload=event_payload,
+                version=1,
+            )
+
+            logger.info("Law created", law_id=law_id, title=command.title)
+            return [event]
 
     def handle_activate_law(
         self,
@@ -340,43 +385,52 @@ class LawCommandHandlers:
         Raises:
             LawNotFound: If law doesn't exist
         """
-        now = self.time_provider.now()
-
-        # Validate law exists
-        if command.law_id not in law_registry:
-            raise LawNotFound(command.law_id)
-
-        law = law_registry[command.law_id]
-        current_version = law.get("version", 1)
-
-        # Compute first checkpoint
-        checkpoints = law["checkpoints"]
-        next_checkpoint_at, next_checkpoint_index = compute_next_checkpoint(
-            now, checkpoints, 0
-        )
-
-        # Create event
-        event_payload = LawActivated(
-            law_id=command.law_id,
-            activated_at=now,
-            activated_by=actor_id,
-            next_checkpoint_at=next_checkpoint_at,  # type: ignore
-            next_checkpoint_index=next_checkpoint_index,
-        ).model_dump(mode="json")
-
-        event = create_event(
-            event_id=generate_id(),
-            stream_id=command.law_id,
-            stream_type="law",
-            event_type="LawActivated",
-            occurred_at=now,
+        with LogOperation(
+            logger,
+            "handle_activate_law",
             command_id=command_id,
             actor_id=actor_id,
-            payload=event_payload,
-            version=current_version + 1,
-        )
+            law_id=command.law_id,
+        ):
+            now = self.time_provider.now()
 
-        return [event]
+            # Validate law exists
+            if command.law_id not in law_registry:
+                logger.warning("Law not found", law_id=command.law_id)
+                raise LawNotFound(command.law_id)
+
+            law = law_registry[command.law_id]
+            current_version = law.get("version", 1)
+
+            # Compute first checkpoint
+            checkpoints = law["checkpoints"]
+            next_checkpoint_at, next_checkpoint_index = compute_next_checkpoint(
+                now, checkpoints, 0
+            )
+
+            # Create event
+            event_payload = LawActivated(
+                law_id=command.law_id,
+                activated_at=now,
+                activated_by=actor_id,
+                next_checkpoint_at=next_checkpoint_at,  # type: ignore
+                next_checkpoint_index=next_checkpoint_index,
+            ).model_dump(mode="json")
+
+            event = create_event(
+                event_id=generate_id(),
+                stream_id=command.law_id,
+                stream_type="law",
+                event_type="LawActivated",
+                occurred_at=now,
+                command_id=command_id,
+                actor_id=actor_id,
+                payload=event_payload,
+                version=current_version + 1,
+            )
+
+            logger.info("Law activated", law_id=command.law_id, next_checkpoint_at=next_checkpoint_at.isoformat() if next_checkpoint_at else None)
+            return [event]
 
     def handle_trigger_law_review(
         self,
@@ -400,37 +454,47 @@ class LawCommandHandlers:
         Raises:
             LawNotFound: If law doesn't exist
         """
-        now = self.time_provider.now()
-
-        # Validate law exists
-        if command.law_id not in law_registry:
-            raise LawNotFound(command.law_id)
-
-        law = law_registry[command.law_id]
-        current_version = law.get("version", 1)
-
-        # Create event
-        event_payload = LawReviewTriggered(
-            law_id=command.law_id,
-            triggered_at=now,
-            triggered_by=actor_id,
-            reason=command.reason,
-            checkpoint_index=law.get("next_checkpoint_index"),
-        ).model_dump(mode="json")
-
-        event = create_event(
-            event_id=generate_id(),
-            stream_id=command.law_id,
-            stream_type="law",
-            event_type="LawReviewTriggered",
-            occurred_at=now,
+        with LogOperation(
+            logger,
+            "handle_trigger_law_review",
             command_id=command_id,
             actor_id=actor_id,
-            payload=event_payload,
-            version=current_version + 1,
-        )
+            law_id=command.law_id,
+            reason=command.reason,
+        ):
+            now = self.time_provider.now()
 
-        return [event]
+            # Validate law exists
+            if command.law_id not in law_registry:
+                logger.warning("Law not found", law_id=command.law_id)
+                raise LawNotFound(command.law_id)
+
+            law = law_registry[command.law_id]
+            current_version = law.get("version", 1)
+
+            # Create event
+            event_payload = LawReviewTriggered(
+                law_id=command.law_id,
+                triggered_at=now,
+                triggered_by=actor_id,
+                reason=command.reason,
+                checkpoint_index=law.get("next_checkpoint_index"),
+            ).model_dump(mode="json")
+
+            event = create_event(
+                event_id=generate_id(),
+                stream_id=command.law_id,
+                stream_type="law",
+                event_type="LawReviewTriggered",
+                occurred_at=now,
+                command_id=command_id,
+                actor_id=actor_id,
+                payload=event_payload,
+                version=current_version + 1,
+            )
+
+            logger.info("Law review triggered", law_id=command.law_id, checkpoint_index=law.get("next_checkpoint_index"))
+            return [event]
 
     def handle_complete_law_review(
         self,
@@ -459,61 +523,72 @@ class LawCommandHandlers:
         Raises:
             LawNotFound: If law doesn't exist
         """
-        now = self.time_provider.now()
-
-        # Validate law exists
-        if command.law_id not in law_registry:
-            raise LawNotFound(command.law_id)
-
-        law = law_registry[command.law_id]
-        current_version = law.get("version", 1)
-
-        # Compute next checkpoint if outcome is "continue"
-        next_checkpoint_at = None
-        if command.outcome == "continue":
-            checkpoints = law["checkpoints"]
-            activated_at_str = law.get("activated_at")
-            if activated_at_str:
-                from datetime import datetime as dt
-
-                activated_at = (
-                    dt.fromisoformat(activated_at_str)
-                    if isinstance(activated_at_str, str)
-                    else activated_at_str
-                )
-                current_index = law.get("next_checkpoint_index", 0)
-                next_index = current_index + 1
-
-                if next_index < len(checkpoints):
-                    next_checkpoint_at, _ = compute_next_checkpoint(
-                        activated_at, checkpoints, next_index
-                    )
-
-        # Create event
-        from freedom_that_lasts.law.events import LawReviewCompleted
-
-        event_payload = LawReviewCompleted(
-            law_id=command.law_id,
-            completed_at=now,
-            completed_by=actor_id or "system",
-            outcome=command.outcome,
-            notes=command.notes,
-            next_checkpoint_at=next_checkpoint_at,
-        ).model_dump(mode="json")
-
-        event = create_event(
-            event_id=generate_id(),
-            stream_id=command.law_id,
-            stream_type="law",
-            event_type="LawReviewCompleted",
-            occurred_at=now,
+        with LogOperation(
+            logger,
+            "handle_complete_law_review",
             command_id=command_id,
             actor_id=actor_id,
-            payload=event_payload,
-            version=current_version + 1,
-        )
+            law_id=command.law_id,
+            outcome=command.outcome,
+        ):
+            now = self.time_provider.now()
 
-        return [event]
+            # Validate law exists
+            if command.law_id not in law_registry:
+                logger.warning("Law not found", law_id=command.law_id)
+                raise LawNotFound(command.law_id)
+
+            law = law_registry[command.law_id]
+            current_version = law.get("version", 1)
+
+            # Compute next checkpoint if outcome is "continue"
+            next_checkpoint_at = None
+            if command.outcome == "continue":
+                logger.debug("Computing next checkpoint for law continuation", law_id=command.law_id)
+                checkpoints = law["checkpoints"]
+                activated_at_str = law.get("activated_at")
+                if activated_at_str:
+                    from datetime import datetime as dt
+
+                    activated_at = (
+                        dt.fromisoformat(activated_at_str)
+                        if isinstance(activated_at_str, str)
+                        else activated_at_str
+                    )
+                    current_index = law.get("next_checkpoint_index", 0)
+                    next_index = current_index + 1
+
+                    if next_index < len(checkpoints):
+                        next_checkpoint_at, _ = compute_next_checkpoint(
+                            activated_at, checkpoints, next_index
+                        )
+
+            # Create event
+            from freedom_that_lasts.law.events import LawReviewCompleted
+
+            event_payload = LawReviewCompleted(
+                law_id=command.law_id,
+                completed_at=now,
+                completed_by=actor_id or "system",
+                outcome=command.outcome,
+                notes=command.notes,
+                next_checkpoint_at=next_checkpoint_at,
+            ).model_dump(mode="json")
+
+            event = create_event(
+                event_id=generate_id(),
+                stream_id=command.law_id,
+                stream_type="law",
+                event_type="LawReviewCompleted",
+                occurred_at=now,
+                command_id=command_id,
+                actor_id=actor_id,
+                payload=event_payload,
+                version=current_version + 1,
+            )
+
+            logger.info("Law review completed", law_id=command.law_id, outcome=command.outcome, next_checkpoint_at=next_checkpoint_at.isoformat() if next_checkpoint_at else None)
+            return [event]
 
     def handle_adjust_law(
         self,
@@ -539,82 +614,93 @@ class LawCommandHandlers:
         Raises:
             LawNotFound: If law doesn't exist
         """
-        now = self.time_provider.now()
-
-        # Validate law exists
-        if command.law_id not in law_registry:
-            raise LawNotFound(command.law_id)
-
-        law = law_registry[command.law_id]
-        current_version = law.get("version", 1)
-
-        # Create adjustment event
-        from freedom_that_lasts.law.events import LawAdjusted
-
-        adjust_payload = LawAdjusted(
-            law_id=command.law_id,
-            adjusted_at=now,
-            adjusted_by=actor_id or "system",
-            changes=command.changes,
-            reason=command.reason,
-        ).model_dump(mode="json")
-
-        adjust_event = create_event(
-            event_id=generate_id(),
-            stream_id=command.law_id,
-            stream_type="law",
-            event_type="LawAdjusted",
-            occurred_at=now,
+        with LogOperation(
+            logger,
+            "handle_adjust_law",
             command_id=command_id,
             actor_id=actor_id,
-            payload=adjust_payload,
-            version=current_version + 1,
-        )
+            law_id=command.law_id,
+        ):
+            now = self.time_provider.now()
 
-        # After adjustment, reactivate with next checkpoint
-        checkpoints = law["checkpoints"]
-        activated_at_str = law.get("activated_at")
-        if activated_at_str:
-            from datetime import datetime as dt
+            # Validate law exists
+            if command.law_id not in law_registry:
+                logger.warning("Law not found", law_id=command.law_id)
+                raise LawNotFound(command.law_id)
 
-            activated_at = (
-                dt.fromisoformat(activated_at_str)
-                if isinstance(activated_at_str, str)
-                else activated_at_str
-            )
-            current_index = law.get("next_checkpoint_index", 0)
-            next_index = current_index + 1
+            law = law_registry[command.law_id]
+            current_version = law.get("version", 1)
 
-            next_checkpoint_at, next_checkpoint_index = compute_next_checkpoint(
-                activated_at, checkpoints, next_index
-            )
+            # Create adjustment event
+            from freedom_that_lasts.law.events import LawAdjusted
 
-            # Reactivate
-            from freedom_that_lasts.law.events import LawActivated
-
-            reactivate_payload = LawActivated(
+            adjust_payload = LawAdjusted(
                 law_id=command.law_id,
-                activated_at=now,
-                activated_by=actor_id,
-                next_checkpoint_at=next_checkpoint_at,  # type: ignore
-                next_checkpoint_index=next_checkpoint_index,
+                adjusted_at=now,
+                adjusted_by=actor_id or "system",
+                changes=command.changes,
+                reason=command.reason,
             ).model_dump(mode="json")
 
-            reactivate_event = create_event(
+            adjust_event = create_event(
                 event_id=generate_id(),
                 stream_id=command.law_id,
                 stream_type="law",
-                event_type="LawActivated",
+                event_type="LawAdjusted",
                 occurred_at=now,
-                command_id=generate_id(),  # Different command for reactivation
+                command_id=command_id,
                 actor_id=actor_id,
-                payload=reactivate_payload,
-                version=current_version + 2,
+                payload=adjust_payload,
+                version=current_version + 1,
             )
 
-            return [adjust_event, reactivate_event]
-        else:
-            return [adjust_event]
+            # After adjustment, reactivate with next checkpoint
+            checkpoints = law["checkpoints"]
+            activated_at_str = law.get("activated_at")
+            if activated_at_str:
+                from datetime import datetime as dt
+
+                activated_at = (
+                    dt.fromisoformat(activated_at_str)
+                    if isinstance(activated_at_str, str)
+                    else activated_at_str
+                )
+                current_index = law.get("next_checkpoint_index", 0)
+                next_index = current_index + 1
+
+                logger.debug("Reactivating law after adjustment", law_id=command.law_id, next_checkpoint_index=next_index)
+                next_checkpoint_at, next_checkpoint_index = compute_next_checkpoint(
+                    activated_at, checkpoints, next_index
+                )
+
+                # Reactivate
+                from freedom_that_lasts.law.events import LawActivated
+
+                reactivate_payload = LawActivated(
+                    law_id=command.law_id,
+                    activated_at=now,
+                    activated_by=actor_id,
+                    next_checkpoint_at=next_checkpoint_at,  # type: ignore
+                    next_checkpoint_index=next_checkpoint_index,
+                ).model_dump(mode="json")
+
+                reactivate_event = create_event(
+                    event_id=generate_id(),
+                    stream_id=command.law_id,
+                    stream_type="law",
+                    event_type="LawActivated",
+                    occurred_at=now,
+                    command_id=generate_id(),  # Different command for reactivation
+                    actor_id=actor_id,
+                    payload=reactivate_payload,
+                    version=current_version + 2,
+                )
+
+                logger.info("Law adjusted and reactivated", law_id=command.law_id, events_emitted=2)
+                return [adjust_event, reactivate_event]
+            else:
+                logger.info("Law adjusted (no reactivation)", law_id=command.law_id, events_emitted=1)
+                return [adjust_event]
 
     def handle_schedule_law_sunset(
         self,
@@ -640,43 +726,53 @@ class LawCommandHandlers:
         Raises:
             LawNotFound: If law doesn't exist
         """
-        now = self.time_provider.now()
-
-        # Validate law exists
-        if command.law_id not in law_registry:
-            raise LawNotFound(command.law_id)
-
-        law = law_registry[command.law_id]
-        current_version = law.get("version", 1)
-
-        # Compute sunset date
-        from datetime import timedelta
-
-        sunset_at = now + timedelta(days=command.sunset_days)
-
-        # Create event
-        from freedom_that_lasts.law.events import LawSunsetScheduled
-
-        event_payload = LawSunsetScheduled(
-            law_id=command.law_id,
-            scheduled_at=now,
-            sunset_at=sunset_at,
-            reason=command.reason,
-        ).model_dump(mode="json")
-
-        event = create_event(
-            event_id=generate_id(),
-            stream_id=command.law_id,
-            stream_type="law",
-            event_type="LawSunsetScheduled",
-            occurred_at=now,
+        with LogOperation(
+            logger,
+            "handle_schedule_law_sunset",
             command_id=command_id,
             actor_id=actor_id,
-            payload=event_payload,
-            version=current_version + 1,
-        )
+            law_id=command.law_id,
+            sunset_days=command.sunset_days,
+        ):
+            now = self.time_provider.now()
 
-        return [event]
+            # Validate law exists
+            if command.law_id not in law_registry:
+                logger.warning("Law not found", law_id=command.law_id)
+                raise LawNotFound(command.law_id)
+
+            law = law_registry[command.law_id]
+            current_version = law.get("version", 1)
+
+            # Compute sunset date
+            from datetime import timedelta
+
+            sunset_at = now + timedelta(days=command.sunset_days)
+
+            # Create event
+            from freedom_that_lasts.law.events import LawSunsetScheduled
+
+            event_payload = LawSunsetScheduled(
+                law_id=command.law_id,
+                scheduled_at=now,
+                sunset_at=sunset_at,
+                reason=command.reason,
+            ).model_dump(mode="json")
+
+            event = create_event(
+                event_id=generate_id(),
+                stream_id=command.law_id,
+                stream_type="law",
+                event_type="LawSunsetScheduled",
+                occurred_at=now,
+                command_id=command_id,
+                actor_id=actor_id,
+                payload=event_payload,
+                version=current_version + 1,
+            )
+
+            logger.info("Law sunset scheduled", law_id=command.law_id, sunset_at=sunset_at.isoformat(), reason=command.reason)
+            return [event]
 
     def handle_archive_law(
         self,
@@ -702,34 +798,43 @@ class LawCommandHandlers:
         Raises:
             LawNotFound: If law doesn't exist
         """
-        now = self.time_provider.now()
-
-        # Validate law exists
-        if command.law_id not in law_registry:
-            raise LawNotFound(command.law_id)
-
-        law = law_registry[command.law_id]
-        current_version = law.get("version", 1)
-
-        # Create event
-        from freedom_that_lasts.law.events import LawArchived
-
-        event_payload = LawArchived(
-            law_id=command.law_id,
-            archived_at=now,
-            reason=command.reason,
-        ).model_dump(mode="json")
-
-        event = create_event(
-            event_id=generate_id(),
-            stream_id=command.law_id,
-            stream_type="law",
-            event_type="LawArchived",
-            occurred_at=now,
+        with LogOperation(
+            logger,
+            "handle_archive_law",
             command_id=command_id,
             actor_id=actor_id,
-            payload=event_payload,
-            version=current_version + 1,
-        )
+            law_id=command.law_id,
+        ):
+            now = self.time_provider.now()
 
-        return [event]
+            # Validate law exists
+            if command.law_id not in law_registry:
+                logger.warning("Law not found", law_id=command.law_id)
+                raise LawNotFound(command.law_id)
+
+            law = law_registry[command.law_id]
+            current_version = law.get("version", 1)
+
+            # Create event
+            from freedom_that_lasts.law.events import LawArchived
+
+            event_payload = LawArchived(
+                law_id=command.law_id,
+                archived_at=now,
+                reason=command.reason,
+            ).model_dump(mode="json")
+
+            event = create_event(
+                event_id=generate_id(),
+                stream_id=command.law_id,
+                stream_type="law",
+                event_type="LawArchived",
+                occurred_at=now,
+                command_id=command_id,
+                actor_id=actor_id,
+                payload=event_payload,
+                version=current_version + 1,
+            )
+
+            logger.info("Law archived", law_id=command.law_id, reason=command.reason)
+            return [event]
