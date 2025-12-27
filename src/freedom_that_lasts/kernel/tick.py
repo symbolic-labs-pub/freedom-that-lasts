@@ -26,6 +26,7 @@ from freedom_that_lasts.kernel.time import TimeProvider
 from freedom_that_lasts.law.events import SystemTick
 from freedom_that_lasts.law.invariants import compute_in_degrees
 from freedom_that_lasts.law.projections import DelegationGraph, LawRegistry
+from freedom_that_lasts.resource.triggers import evaluate_all_procurement_triggers
 
 
 class TickResult:
@@ -53,12 +54,17 @@ class TickResult:
             "DelegationConcentrationWarning",
             "BudgetBalanceViolationDetected",
             "BudgetOverspendDetected",
+            "EmptyFeasibleSetDetected",
+            "SupplierConcentrationWarning",
         }
         return any(e.event_type in warning_types for e in self.triggered_events)
 
     def has_halts(self) -> bool:
         """Check if any halts were triggered"""
-        halt_types = {"DelegationConcentrationHalt"}
+        halt_types = {
+            "DelegationConcentrationHalt",
+            "SupplierConcentrationHalt",
+        }
         return any(e.event_type in halt_types for e in self.triggered_events)
 
     def summary(self) -> str:
@@ -105,6 +111,8 @@ class TickEngine:
         delegation_graph: DelegationGraph,
         law_registry: LawRegistry,
         budget_registry: BudgetRegistry | None = None,
+        supplier_registry: any = None,  # SupplierRegistry
+        tender_registry: any = None,  # TenderRegistry
     ) -> TickResult:
         """
         Execute a single tick evaluation
@@ -113,6 +121,8 @@ class TickEngine:
             delegation_graph: Current delegation state
             law_registry: Current law state
             budget_registry: Optional budget state (for budget triggers)
+            supplier_registry: Optional supplier registry (for procurement triggers)
+            tender_registry: Optional tender registry (for procurement triggers)
 
         Returns:
             TickResult with events and health assessment
@@ -159,6 +169,16 @@ class TickEngine:
                 active_budgets, now
             )
             triggered_events.extend(overspend_events)
+
+        # Evaluate procurement triggers if registries are provided
+        if supplier_registry is not None and tender_registry is not None:
+            procurement_events = evaluate_all_procurement_triggers(
+                supplier_registry=supplier_registry.to_dict(),
+                tender_registry=tender_registry.to_dict(),
+                safety_policy=self.safety_policy,
+                now=now,
+            )
+            triggered_events.extend(procurement_events)
 
         # Append all events to store
         all_events = [tick_event] + triggered_events

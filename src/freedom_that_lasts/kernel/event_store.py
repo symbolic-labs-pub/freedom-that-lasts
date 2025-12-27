@@ -68,8 +68,7 @@ class SQLiteEventStore:
                     actor_id TEXT,
                     payload_json TEXT NOT NULL,
 
-                    UNIQUE(stream_id, version),
-                    UNIQUE(command_id)
+                    UNIQUE(stream_id, version)
                 )
             """)
 
@@ -135,12 +134,15 @@ class SQLiteEventStore:
         if not events:
             return []
 
-        # Check idempotency first - if command already processed, return existing events
+        # Check idempotency first - if command already processed FOR THIS STREAM, return existing events
+        # NOTE: Same command can produce events in multiple streams (e.g., CompleteTender -> TenderCompleted + ReputationUpdated)
         first_command_id = events[0].command_id
         existing_events = self._get_events_by_command_id(first_command_id)
-        if existing_events:
-            # Command already processed - this is SUCCESS (idempotency)
-            return existing_events
+        # Filter to only events in THIS stream
+        existing_events_in_stream = [e for e in existing_events if e.stream_id == stream_id]
+        if existing_events_in_stream:
+            # Command already processed FOR THIS STREAM - this is SUCCESS (idempotency)
+            return existing_events_in_stream
 
         with self._connect() as conn:
             try:

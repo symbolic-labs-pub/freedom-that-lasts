@@ -15,6 +15,8 @@ Usage:
 """
 
 import json
+from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Optional
 
@@ -22,6 +24,7 @@ import typer
 from typing_extensions import Annotated
 
 from freedom_that_lasts.ftl import FTL
+from freedom_that_lasts.resource.models import SelectionMethod
 
 app = typer.Typer(
     name="ftl",
@@ -35,12 +38,18 @@ delegate_app = typer.Typer(help="Delegation management commands")
 law_app = typer.Typer(help="Law lifecycle management commands")
 budget_app = typer.Typer(help="Budget management commands")
 expenditure_app = typer.Typer(help="Expenditure tracking commands")
+supplier_app = typer.Typer(help="Supplier registry commands")
+tender_app = typer.Typer(help="Tender/procurement lifecycle commands")
+delivery_app = typer.Typer(help="Delivery tracking commands")
 
 app.add_typer(workspace_app, name="workspace")
 app.add_typer(delegate_app, name="delegate")
 app.add_typer(law_app, name="law")
 app.add_typer(budget_app, name="budget")
 app.add_typer(expenditure_app, name="expenditure")
+app.add_typer(supplier_app, name="supplier")
+app.add_typer(tender_app, name="tender")
+app.add_typer(delivery_app, name="delivery")
 
 # Global state
 DEFAULT_DB = Path(".ftl.db")
@@ -657,6 +666,506 @@ def safety(
             typer.echo(f"  {event['occurred_at']}: {event['event_type']}")
     else:
         typer.echo("\nNo safety events logged")
+
+
+# Supplier commands
+
+
+@supplier_app.command("register")
+def supplier_register(
+    name: Annotated[str, typer.Option("--name", help="Supplier name")],
+    supplier_type: Annotated[
+        str,
+        typer.Option("--type", help="Supplier type (company, public_agency, individual, cooperative)"),
+    ] = "company",
+    metadata: Annotated[
+        Optional[str],
+        typer.Option("--metadata", help="Additional metadata (JSON)"),
+    ] = None,
+    db: Annotated[
+        Optional[Path],
+        typer.Option("--db", help="Database path"),
+    ] = None,
+) -> None:
+    """Register a new supplier"""
+    ftl = get_ftl(db)
+
+    metadata_dict = json.loads(metadata) if metadata else {}
+    supplier = ftl.register_supplier(
+        name=name,
+        supplier_type=supplier_type,
+        metadata=metadata_dict,
+    )
+
+    typer.echo(f"✓ Registered supplier: {supplier['supplier_id']}")
+    typer.echo(f"  Name: {supplier['name']}")
+    typer.echo(f"  Type: {supplier['supplier_type']}")
+
+
+@supplier_app.command("add-capability")
+def supplier_add_capability(
+    supplier_id: Annotated[str, typer.Option("--id", help="Supplier ID")],
+    capability_type: Annotated[str, typer.Option("--capability", help="Capability type (e.g., ISO27001)")],
+    scope: Annotated[
+        Optional[str],
+        typer.Option("--scope", help="Capability scope (JSON)"),
+    ] = None,
+    valid_from: Annotated[
+        Optional[str],
+        typer.Option("--valid-from", help="Valid from date (ISO format)"),
+    ] = None,
+    valid_until: Annotated[
+        Optional[str],
+        typer.Option("--valid-until", help="Valid until date (ISO format)"),
+    ] = None,
+    evidence: Annotated[
+        str,
+        typer.Option("--evidence", help="Evidence list (JSON array)"),
+    ] = "[]",
+    capacity: Annotated[
+        Optional[str],
+        typer.Option("--capacity", help="Capacity data (JSON)"),
+    ] = None,
+    db: Annotated[
+        Optional[Path],
+        typer.Option("--db", help="Database path"),
+    ] = None,
+) -> None:
+    """Add capability claim to supplier"""
+    ftl = get_ftl(db)
+
+    scope_dict = json.loads(scope) if scope else {}
+    evidence_list = json.loads(evidence)
+    capacity_dict = json.loads(capacity) if capacity else None
+
+    valid_from_dt = datetime.fromisoformat(valid_from) if valid_from else datetime.now()
+    valid_until_dt = datetime.fromisoformat(valid_until) if valid_until else None
+
+    result = ftl.add_capability_claim(
+        supplier_id=supplier_id,
+        capability_type=capability_type,
+        scope=scope_dict,
+        valid_from=valid_from_dt,
+        valid_until=valid_until_dt,
+        evidence=evidence_list,
+        capacity=capacity_dict,
+    )
+
+    typer.echo(f"✓ Added capability: {capability_type}")
+    typer.echo(f"  Supplier: {supplier_id}")
+    typer.echo(f"  Valid from: {valid_from_dt}")
+    typer.echo(f"  Valid until: {valid_until_dt or 'N/A'}")
+
+
+@supplier_app.command("list")
+def supplier_list(
+    capability: Annotated[
+        Optional[str],
+        typer.Option("--capability", help="Filter by capability type"),
+    ] = None,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output as JSON"),
+    ] = False,
+    db: Annotated[
+        Optional[Path],
+        typer.Option("--db", help="Database path"),
+    ] = None,
+) -> None:
+    """List all suppliers"""
+    ftl = get_ftl(db)
+
+    suppliers = ftl.list_suppliers(capability_type=capability)
+
+    if json_output:
+        typer.echo(json.dumps(suppliers, indent=2, default=str))
+    else:
+        typer.echo(f"Suppliers: {len(suppliers)}")
+        for supplier in suppliers:
+            typer.echo(f"\n  {supplier['supplier_id']}")
+            typer.echo(f"    Name: {supplier['name']}")
+            typer.echo(f"    Type: {supplier['supplier_type']}")
+            typer.echo(f"    Capabilities: {len(supplier.get('capabilities', {}))}")
+            typer.echo(f"    Reputation: {supplier.get('reputation_score', 0.5):.2f}")
+            typer.echo(f"    Total value awarded: ${supplier.get('total_value_awarded', 0)}")
+
+
+@supplier_app.command("show")
+def supplier_show(
+    supplier_id: Annotated[str, typer.Option("--id", help="Supplier ID")],
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output as JSON"),
+    ] = False,
+    db: Annotated[
+        Optional[Path],
+        typer.Option("--db", help="Database path"),
+    ] = None,
+) -> None:
+    """Show supplier details"""
+    ftl = get_ftl(db)
+
+    supplier = ftl.supplier_registry.get(supplier_id)
+    if not supplier:
+        typer.echo(f"Error: Supplier not found: {supplier_id}", err=True)
+        raise typer.Exit(1)
+
+    if json_output:
+        typer.echo(json.dumps(supplier, indent=2, default=str))
+    else:
+        typer.echo(f"Supplier: {supplier['supplier_id']}")
+        typer.echo(f"  Name: {supplier['name']}")
+        typer.echo(f"  Type: {supplier['supplier_type']}")
+        typer.echo(f"  Reputation: {supplier.get('reputation_score', 0.5):.2f}")
+        typer.echo(f"  Total value awarded: ${supplier.get('total_value_awarded', 0)}")
+        typer.echo(f"  Capabilities:")
+        for cap_type, claim in supplier.get('capabilities', {}).items():
+            typer.echo(f"    - {cap_type}")
+            typer.echo(f"        Valid: {claim.get('valid_from')} to {claim.get('valid_until', 'N/A')}")
+            typer.echo(f"        Evidence: {len(claim.get('evidence', []))} items")
+
+
+# Tender commands
+
+
+@tender_app.command("create")
+def tender_create(
+    law_id: Annotated[str, typer.Option("--law-id", help="Law ID")],
+    title: Annotated[str, typer.Option("--title", help="Tender title")],
+    description: Annotated[str, typer.Option("--description", help="Tender description")],
+    requirements: Annotated[
+        str,
+        typer.Option("--requirements", help="Requirements (JSON array)"),
+    ],
+    required_capacity: Annotated[
+        Optional[str],
+        typer.Option("--required-capacity", help="Required capacity (JSON)"),
+    ] = None,
+    sla_requirements: Annotated[
+        Optional[str],
+        typer.Option("--sla", help="SLA requirements (JSON)"),
+    ] = None,
+    evidence_required: Annotated[
+        str,
+        typer.Option("--evidence-required", help="Evidence types required (JSON array)"),
+    ] = "[]",
+    acceptance_tests: Annotated[
+        str,
+        typer.Option("--acceptance-tests", help="Acceptance tests (JSON array)"),
+    ] = "[]",
+    estimated_value: Annotated[
+        Optional[str],
+        typer.Option("--estimated-value", help="Estimated contract value"),
+    ] = None,
+    selection_method: Annotated[
+        str,
+        typer.Option("--selection-method", help="Selection method (ROTATION, RANDOM, ROTATION_WITH_RANDOM)"),
+    ] = "ROTATION_WITH_RANDOM",
+    db: Annotated[
+        Optional[Path],
+        typer.Option("--db", help="Database path"),
+    ] = None,
+) -> None:
+    """Create a new tender"""
+    ftl = get_ftl(db)
+
+    requirements_list = json.loads(requirements)
+    required_capacity_dict = json.loads(required_capacity) if required_capacity else None
+    sla_dict = json.loads(sla_requirements) if sla_requirements else {}
+    evidence_list = json.loads(evidence_required)
+    tests_list = json.loads(acceptance_tests)
+    estimated_value_decimal = Decimal(estimated_value) if estimated_value else None
+
+    tender = ftl.create_tender(
+        law_id=law_id,
+        title=title,
+        description=description,
+        requirements=requirements_list,
+        required_capacity=required_capacity_dict,
+        sla_requirements=sla_dict,
+        evidence_required=evidence_list,
+        acceptance_tests=tests_list,
+        estimated_value=estimated_value_decimal,
+        selection_method=SelectionMethod(selection_method),
+    )
+
+    typer.echo(f"✓ Created tender: {tender['tender_id']}")
+    typer.echo(f"  Title: {tender['title']}")
+    typer.echo(f"  Status: {tender['status']}")
+    typer.echo(f"  Requirements: {len(tender['requirements'])}")
+
+
+@tender_app.command("open")
+def tender_open(
+    tender_id: Annotated[str, typer.Option("--id", help="Tender ID")],
+    db: Annotated[
+        Optional[Path],
+        typer.Option("--db", help="Database path"),
+    ] = None,
+) -> None:
+    """Open tender for submissions"""
+    ftl = get_ftl(db)
+
+    tender = ftl.open_tender(tender_id)
+
+    typer.echo(f"✓ Opened tender: {tender_id}")
+    typer.echo(f"  Status: {tender['status']}")
+
+
+@tender_app.command("evaluate")
+def tender_evaluate(
+    tender_id: Annotated[str, typer.Option("--id", help="Tender ID")],
+    db: Annotated[
+        Optional[Path],
+        typer.Option("--db", help="Database path"),
+    ] = None,
+) -> None:
+    """Evaluate tender (compute feasible set)"""
+    ftl = get_ftl(db)
+
+    tender = ftl.evaluate_tender(tender_id)
+
+    typer.echo(f"✓ Evaluated tender: {tender_id}")
+    typer.echo(f"  Status: {tender['status']}")
+    typer.echo(f"  Feasible suppliers: {len(tender['feasible_suppliers'])}")
+    if tender.get('feasible_suppliers'):
+        typer.echo(f"  Feasible IDs:")
+        for supplier_id in tender['feasible_suppliers']:
+            typer.echo(f"    - {supplier_id}")
+    if tender.get('excluded_suppliers_with_reasons'):
+        typer.echo(f"  Excluded suppliers: {len(tender['excluded_suppliers_with_reasons'])}")
+
+
+@tender_app.command("select")
+def tender_select(
+    tender_id: Annotated[str, typer.Option("--id", help="Tender ID")],
+    seed: Annotated[
+        Optional[str],
+        typer.Option("--seed", help="Random seed for selection"),
+    ] = None,
+    db: Annotated[
+        Optional[Path],
+        typer.Option("--db", help="Database path"),
+    ] = None,
+) -> None:
+    """Select supplier (constitutional mechanism)"""
+    ftl = get_ftl(db)
+
+    tender = ftl.select_supplier(tender_id, selection_seed=seed)
+
+    typer.echo(f"✓ Selected supplier for tender: {tender_id}")
+    typer.echo(f"  Selected: {tender['selected_supplier_id']}")
+    typer.echo(f"  Reason: {tender.get('selection_reason', 'N/A')}")
+
+
+@tender_app.command("award")
+def tender_award(
+    tender_id: Annotated[str, typer.Option("--id", help="Tender ID")],
+    contract_value: Annotated[str, typer.Option("--value", help="Contract value")],
+    contract_terms: Annotated[
+        str,
+        typer.Option("--terms", help="Contract terms (JSON)"),
+    ] = "{}",
+    db: Annotated[
+        Optional[Path],
+        typer.Option("--db", help="Database path"),
+    ] = None,
+) -> None:
+    """Award tender to selected supplier"""
+    ftl = get_ftl(db)
+
+    terms_dict = json.loads(contract_terms)
+    value_decimal = Decimal(contract_value)
+
+    tender = ftl.award_tender(
+        tender_id=tender_id,
+        contract_value=value_decimal,
+        contract_terms=terms_dict,
+    )
+
+    typer.echo(f"✓ Awarded tender: {tender_id}")
+    typer.echo(f"  Status: {tender['status']}")
+    typer.echo(f"  Contract value: ${tender.get('contract_value', 'N/A')}")
+
+
+@tender_app.command("list")
+def tender_list(
+    law_id: Annotated[
+        Optional[str],
+        typer.Option("--law-id", help="Filter by law ID"),
+    ] = None,
+    status: Annotated[
+        Optional[str],
+        typer.Option("--status", help="Filter by status"),
+    ] = None,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output as JSON"),
+    ] = False,
+    db: Annotated[
+        Optional[Path],
+        typer.Option("--db", help="Database path"),
+    ] = None,
+) -> None:
+    """List all tenders"""
+    ftl = get_ftl(db)
+
+    tenders = ftl.list_tenders(law_id=law_id, status=status)
+
+    if json_output:
+        typer.echo(json.dumps(tenders, indent=2, default=str))
+    else:
+        typer.echo(f"Tenders: {len(tenders)}")
+        for tender in tenders:
+            typer.echo(f"\n  {tender['tender_id']}")
+            typer.echo(f"    Title: {tender['title']}")
+            typer.echo(f"    Status: {tender['status']}")
+            typer.echo(f"    Law: {tender['law_id']}")
+            if tender.get('selected_supplier_id'):
+                typer.echo(f"    Selected supplier: {tender['selected_supplier_id']}")
+
+
+@tender_app.command("show")
+def tender_show(
+    tender_id: Annotated[str, typer.Option("--id", help="Tender ID")],
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output as JSON"),
+    ] = False,
+    db: Annotated[
+        Optional[Path],
+        typer.Option("--db", help="Database path"),
+    ] = None,
+) -> None:
+    """Show tender details"""
+    ftl = get_ftl(db)
+
+    tender = ftl.tender_registry.get(tender_id)
+    if not tender:
+        typer.echo(f"Error: Tender not found: {tender_id}", err=True)
+        raise typer.Exit(1)
+
+    if json_output:
+        typer.echo(json.dumps(tender, indent=2, default=str))
+    else:
+        typer.echo(f"Tender: {tender['tender_id']}")
+        typer.echo(f"  Title: {tender['title']}")
+        typer.echo(f"  Description: {tender['description']}")
+        typer.echo(f"  Status: {tender['status']}")
+        typer.echo(f"  Law: {tender['law_id']}")
+        typer.echo(f"  Requirements: {len(tender.get('requirements', []))}")
+        if tender.get('feasible_suppliers'):
+            typer.echo(f"  Feasible suppliers: {len(tender['feasible_suppliers'])}")
+        if tender.get('selected_supplier_id'):
+            typer.echo(f"  Selected supplier: {tender['selected_supplier_id']}")
+        if tender.get('contract_value'):
+            typer.echo(f"  Contract value: ${tender['contract_value']}")
+
+
+# Delivery commands
+
+
+@delivery_app.command("milestone")
+def delivery_milestone(
+    tender_id: Annotated[str, typer.Option("--tender", help="Tender ID")],
+    milestone_id: Annotated[str, typer.Option("--milestone-id", help="Milestone ID")],
+    milestone_type: Annotated[
+        str,
+        typer.Option("--type", help="Milestone type (started, progress, completed, test_passed, test_failed)"),
+    ],
+    description: Annotated[str, typer.Option("--description", help="Milestone description")],
+    evidence: Annotated[
+        str,
+        typer.Option("--evidence", help="Evidence (JSON array)"),
+    ] = "[]",
+    metadata: Annotated[
+        str,
+        typer.Option("--metadata", help="Additional metadata (JSON)"),
+    ] = "{}",
+    db: Annotated[
+        Optional[Path],
+        typer.Option("--db", help="Database path"),
+    ] = None,
+) -> None:
+    """Record delivery milestone"""
+    ftl = get_ftl(db)
+
+    evidence_list = json.loads(evidence)
+    metadata_dict = json.loads(metadata)
+
+    result = ftl.record_milestone(
+        tender_id=tender_id,
+        milestone_id=milestone_id,
+        milestone_type=milestone_type,
+        description=description,
+        evidence=evidence_list,
+        metadata=metadata_dict,
+    )
+
+    typer.echo(f"✓ Recorded milestone: {milestone_id}")
+    typer.echo(f"  Tender: {tender_id}")
+    typer.echo(f"  Type: {milestone_type}")
+
+
+@delivery_app.command("complete")
+def delivery_complete(
+    tender_id: Annotated[str, typer.Option("--tender", help="Tender ID")],
+    quality_score: Annotated[
+        float,
+        typer.Option("--quality-score", help="Final quality score (0.0-1.0)"),
+    ],
+    completion_report: Annotated[
+        str,
+        typer.Option("--report", help="Completion report (JSON)"),
+    ] = "{}",
+    db: Annotated[
+        Optional[Path],
+        typer.Option("--db", help="Database path"),
+    ] = None,
+) -> None:
+    """Complete tender with quality assessment"""
+    ftl = get_ftl(db)
+
+    report_dict = json.loads(completion_report)
+
+    tender = ftl.complete_tender(
+        tender_id=tender_id,
+        completion_report=report_dict,
+        final_quality_score=quality_score,
+    )
+
+    typer.echo(f"✓ Completed tender: {tender_id}")
+    typer.echo(f"  Status: {tender['status']}")
+    typer.echo(f"  Quality score: {quality_score}")
+
+
+@delivery_app.command("list")
+def delivery_list(
+    tender_id: Annotated[str, typer.Option("--tender", help="Tender ID")],
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output as JSON"),
+    ] = False,
+    db: Annotated[
+        Optional[Path],
+        typer.Option("--db", help="Database path"),
+    ] = None,
+) -> None:
+    """List delivery milestones for a tender"""
+    ftl = get_ftl(db)
+
+    delivery_log = ftl.delivery_log.get_by_tender(tender_id)
+
+    if json_output:
+        typer.echo(json.dumps(delivery_log, indent=2, default=str))
+    else:
+        milestones = delivery_log.get('milestones', [])
+        typer.echo(f"Milestones for tender {tender_id}: {len(milestones)}")
+        for milestone in milestones:
+            typer.echo(f"\n  {milestone['milestone_id']}")
+            typer.echo(f"    Type: {milestone['milestone_type']}")
+            typer.echo(f"    Description: {milestone['description']}")
+            typer.echo(f"    Recorded: {milestone.get('recorded_at', 'N/A')}")
 
 
 def main() -> None:

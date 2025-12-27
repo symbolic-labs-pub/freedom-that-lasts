@@ -39,6 +39,7 @@ from freedom_that_lasts.feedback.indicators import compute_freedom_health
 from freedom_that_lasts.feedback.models import FreedomHealthScore
 from freedom_that_lasts.feedback.projections import FreedomHealthProjection, SafetyEventLog
 from freedom_that_lasts.kernel.event_store import SQLiteEventStore
+from freedom_that_lasts.kernel.events import create_event
 from freedom_that_lasts.kernel.ids import generate_id
 from freedom_that_lasts.kernel.safety_policy import SafetyPolicy
 from freedom_that_lasts.kernel.tick import TickEngine, TickResult
@@ -58,6 +59,26 @@ from freedom_that_lasts.law.handlers import LawCommandHandlers
 from freedom_that_lasts.law.invariants import compute_in_degrees
 from freedom_that_lasts.law.models import ReversibilityClass
 from freedom_that_lasts.law.projections import DelegationGraph, LawRegistry, WorkspaceRegistry
+from freedom_that_lasts.resource.commands import (
+    AddCapabilityClaim,
+    AwardTender,
+    CompleteTender,
+    CreateTender,
+    EvaluateTender,
+    EvidenceSpec,
+    OpenTender,
+    RegisterSupplier,
+    RequirementSpec,
+    SelectSupplier,
+)
+from freedom_that_lasts.resource.handlers import ResourceCommandHandlers
+from freedom_that_lasts.resource.models import SelectionMethod
+from freedom_that_lasts.resource.projections import (
+    DeliveryLog,
+    ProcurementHealthProjection,
+    SupplierRegistry,
+    TenderRegistry,
+)
 
 
 class FTL:
@@ -96,6 +117,9 @@ class FTL:
         self.budget_handlers = BudgetCommandHandlers(
             self.time_provider, self.safety_policy
         )
+        self.resource_handlers = ResourceCommandHandlers(
+            self.time_provider, self.safety_policy
+        )
         self.tick_engine = TickEngine(
             self.event_store, self.time_provider, self.safety_policy
         )
@@ -107,6 +131,10 @@ class FTL:
         self.budget_registry = BudgetRegistry()
         self.expenditure_log = ExpenditureLog()
         self.budget_health_projection = BudgetHealthProjection()
+        self.supplier_registry = SupplierRegistry()
+        self.tender_registry = TenderRegistry()
+        self.delivery_log = DeliveryLog()
+        self.procurement_health_projection = ProcurementHealthProjection()
         self.freedom_health_projection = FreedomHealthProjection()
         self.safety_event_log = SafetyEventLog()
 
@@ -135,6 +163,27 @@ class FTL:
                 self.budget_registry.apply_event(event)
                 self.expenditure_log.apply_event(event)
                 self.budget_health_projection.apply_event(event)
+            elif (event.event_type.startswith("Supplier") and event.event_type != "SupplierSelected") or event.event_type.startswith(
+                "Capability"
+            ) or event.event_type == "ReputationUpdated":
+                self.supplier_registry.apply_event(event)
+                self.procurement_health_projection.apply_event(event)
+            elif event.event_type.startswith("Tender") or event.event_type.startswith(
+                "Feasible"
+            ) or event.event_type == "SupplierSelected":
+                self.tender_registry.apply_event(event)
+                self.procurement_health_projection.apply_event(event)
+            elif event.event_type.startswith("Milestone") or event.event_type.startswith(
+                "SLA"
+            ):
+                self.delivery_log.apply_event(event)
+            elif event.event_type in [
+                "EmptyFeasibleSetDetected",
+                "SupplierConcentrationWarning",
+                "SupplierConcentrationHalt",
+            ]:
+                self.procurement_health_projection.apply_event(event)
+                self.safety_event_log.apply_event(event)
             elif event.event_type in [
                 "DelegationConcentrationWarning",
                 "DelegationConcentrationHalt",
@@ -361,11 +410,18 @@ class FTL:
         Run trigger evaluation loop
 
         Evaluates all automatic safeguards and emits reflex events.
+        Includes law/delegation, budget, and procurement triggers.
 
         Returns:
             TickResult with triggered events and health assessment
         """
-        result = self.tick_engine.tick(self.delegation_graph, self.law_registry)
+        result = self.tick_engine.tick(
+            self.delegation_graph,
+            self.law_registry,
+            self.budget_registry,
+            self.supplier_registry,
+            self.tender_registry,
+        )
 
         # Store and apply triggered events
         for event in result.triggered_events:
@@ -717,3 +773,659 @@ class FTL:
             return self.expenditure_log.get_by_item(budget_id, item_id)
         else:
             return self.expenditure_log.get_by_budget(budget_id)
+
+    # ========================================================================
+    # Resource & Procurement Operations
+    # ========================================================================
+
+    def register_supplier(
+        self,
+        name: str,
+        supplier_type: str,
+        metadata: dict[str, Any] | None = None,
+        actor_id: str = "system",
+    ) -> dict[str, Any]:
+        """
+        Register new supplier in capability registry
+
+        Args:
+            name: Supplier name
+            supplier_type: Type (company, public_agency, individual, cooperative)
+            metadata: Optional metadata
+            actor_id: Actor registering supplier
+
+        Returns:
+            Supplier dict
+        """
+        command = RegisterSupplier(
+            name=name,
+            supplier_type=supplier_type,
+            metadata=metadata or {},
+        )
+
+        events = self.resource_handlers.handle_register_supplier(
+            command, generate_id(), actor_id
+        )
+
+        # Store events and update projections
+        current_version = 0
+        for event in events:
+            # Create new event with correct version (events are immutable)
+            versioned_event = create_event(
+                event_id=event.event_id,
+                stream_id=event.stream_id,
+                stream_type=event.stream_type,
+                event_type=event.event_type,
+                occurred_at=event.occurred_at,
+                actor_id=event.actor_id,
+                command_id=event.command_id,
+                payload=event.payload,
+                version=current_version + 1,
+            )
+            self.event_store.append(versioned_event.stream_id, current_version, [versioned_event])
+            self.supplier_registry.apply_event(versioned_event)
+            current_version = versioned_event.version
+
+        return self.supplier_registry.get(events[0].stream_id)
+
+    def add_capability_claim(
+        self,
+        supplier_id: str,
+        capability_type: str,
+        scope: dict[str, Any],
+        valid_from: datetime | str,
+        valid_until: datetime | str | None,
+        evidence: list[dict[str, Any]],
+        capacity: dict[str, Any] | None = None,
+        actor_id: str = "system",
+    ) -> dict[str, Any]:
+        """
+        Add capability claim to supplier with evidence
+
+        Args:
+            supplier_id: Supplier ID
+            capability_type: Capability type (e.g., "ISO27001", "24_7_support")
+            scope: Capability scope (territory, time, quantity limits)
+            valid_from: Claim validity start
+            valid_until: Claim expiration (None = no expiry)
+            evidence: List of evidence dicts
+            capacity: Optional capacity data
+            actor_id: Actor adding claim
+
+        Returns:
+            Updated supplier dict
+        """
+        # Convert evidence dicts to EvidenceSpec objects
+        evidence_specs = [EvidenceSpec(**ev) for ev in evidence]
+
+        command = AddCapabilityClaim(
+            supplier_id=supplier_id,
+            capability_type=capability_type,
+            scope=scope,
+            valid_from=valid_from,
+            valid_until=valid_until,
+            evidence=evidence_specs,
+            capacity=capacity,
+        )
+
+        # Get current version for optimistic locking
+        supplier = self.supplier_registry.get(supplier_id)
+        current_version = supplier["version"] if supplier else 0
+
+        events = self.resource_handlers.handle_add_capability_claim(
+            command, generate_id(), actor_id, self.supplier_registry
+        )
+
+        # Store events and update projections
+        for event in events:
+            # Create new event with correct version (events are immutable)
+            versioned_event = create_event(
+                event_id=event.event_id,
+                stream_id=event.stream_id,
+                stream_type=event.stream_type,
+                event_type=event.event_type,
+                occurred_at=event.occurred_at,
+                actor_id=event.actor_id,
+                command_id=event.command_id,
+                payload=event.payload,
+                version=current_version + 1,
+            )
+            self.event_store.append(versioned_event.stream_id, current_version, [versioned_event])
+            self.supplier_registry.apply_event(versioned_event)
+            current_version = versioned_event.version
+
+        return self.supplier_registry.get(supplier_id)
+
+    def create_tender(
+        self,
+        law_id: str,
+        title: str,
+        description: str,
+        requirements: list[dict[str, Any]],
+        required_capacity: dict[str, Any] | None = None,
+        sla_requirements: dict[str, Any] | None = None,
+        evidence_required: list[str] | None = None,
+        acceptance_tests: list[dict[str, Any]] | None = None,
+        estimated_value: Any | None = None,
+        budget_item_id: str | None = None,
+        selection_method: SelectionMethod = SelectionMethod.ROTATION_WITH_RANDOM,
+        actor_id: str = "system",
+    ) -> dict[str, Any]:
+        """
+        Create tender for law-mandated procurement
+
+        Args:
+            law_id: Linked law ID
+            title: Tender title
+            description: Tender description
+            requirements: List of requirement dicts
+            required_capacity: Optional overall capacity requirements
+            sla_requirements: Optional SLA requirements
+            evidence_required: Optional list of required evidence types
+            acceptance_tests: Optional acceptance tests
+            estimated_value: Optional estimated contract value
+            budget_item_id: Optional budget item link
+            selection_method: Constitutional selection mechanism
+            actor_id: Actor creating tender
+
+        Returns:
+            Tender dict
+        """
+        # Convert requirement dicts to RequirementSpec objects
+        requirement_specs = [RequirementSpec(**req) for req in requirements]
+
+        command = CreateTender(
+            law_id=law_id,
+            title=title,
+            description=description,
+            requirements=requirement_specs,
+            required_capacity=required_capacity,
+            sla_requirements=sla_requirements,
+            evidence_required=evidence_required or [],
+            acceptance_tests=acceptance_tests or [],
+            estimated_value=estimated_value,
+            budget_item_id=budget_item_id,
+            selection_method=selection_method,
+        )
+
+        events = self.resource_handlers.handle_create_tender(
+            command, generate_id(), actor_id, self.law_registry
+        )
+
+        # Store events and update projections
+        for event in events:
+            self.event_store.append(event.stream_id, 0, [event])
+            self.tender_registry.apply_event(event)
+
+        return self.tender_registry.get(events[0].stream_id)
+
+    def open_tender(self, tender_id: str, actor_id: str = "system") -> dict[str, Any]:
+        """
+        Open tender for submissions (DRAFT → OPEN)
+
+        Args:
+            tender_id: Tender ID
+            actor_id: Actor opening tender
+
+        Returns:
+            Updated tender dict
+        """
+        command = OpenTender(tender_id=tender_id)
+
+        # Get current version for optimistic locking
+        tender = self.tender_registry.get(tender_id)
+        current_version = tender.get("version", 0) if tender else 0
+
+        events = self.resource_handlers.handle_open_tender(
+            command, generate_id(), actor_id, self.tender_registry
+        )
+
+        # Store events and update projections
+        for event in events:
+            # Create new event with correct version (events are immutable)
+            versioned_event = create_event(
+                event_id=event.event_id,
+                stream_id=event.stream_id,
+                stream_type=event.stream_type,
+                event_type=event.event_type,
+                occurred_at=event.occurred_at,
+                actor_id=event.actor_id,
+                command_id=event.command_id,
+                payload=event.payload,
+                version=current_version + 1,
+            )
+            self.event_store.append(versioned_event.stream_id, current_version, [versioned_event])
+            self.tender_registry.apply_event(versioned_event)
+            current_version = versioned_event.version
+
+        return self.tender_registry.get(tender_id)
+
+    def evaluate_tender(
+        self,
+        tender_id: str,
+        evaluation_time: datetime | str | None = None,
+        actor_id: str = "system",
+    ) -> dict[str, Any]:
+        """
+        Evaluate tender - compute feasible set via binary requirement matching
+
+        CORE PROCUREMENT LOGIC: Binary yes/no matching (no scoring).
+
+        Args:
+            tender_id: Tender ID
+            evaluation_time: Optional evaluation timestamp (for testing)
+            actor_id: Actor evaluating (typically "system")
+
+        Returns:
+            Updated tender dict with feasible_suppliers
+        """
+        command = EvaluateTender(
+            tender_id=tender_id,
+            evaluation_time=evaluation_time,
+        )
+
+        # Get current version for optimistic locking
+        tender = self.tender_registry.get(tender_id)
+        current_version = tender.get("version", 0) if tender else 0
+
+        events = self.resource_handlers.handle_evaluate_tender(
+            command,
+            generate_id(),
+            actor_id,
+            self.tender_registry,
+            self.supplier_registry,
+        )
+
+        # Store events and update projections
+        for event in events:
+            # Create new event with correct version (events are immutable)
+            versioned_event = create_event(
+                event_id=event.event_id,
+                stream_id=event.stream_id,
+                stream_type=event.stream_type,
+                event_type=event.event_type,
+                occurred_at=event.occurred_at,
+                actor_id=event.actor_id,
+                command_id=event.command_id,
+                payload=event.payload,
+                version=current_version + 1,
+            )
+            self.event_store.append(versioned_event.stream_id, current_version, [versioned_event])
+            self.tender_registry.apply_event(versioned_event)
+            self.procurement_health_projection.apply_event(versioned_event)
+            current_version = versioned_event.version
+
+        return self.tender_registry.get(tender_id)
+
+    def select_supplier(
+        self,
+        tender_id: str,
+        selection_seed: str | None = None,
+        actor_id: str = "system",
+    ) -> dict[str, Any]:
+        """
+        Select supplier from feasible set using constitutional mechanism
+
+        MULTI-GATE ENFORCEMENT:
+        1. Feasible set not empty
+        2. Selection method matches tender config
+        3. Supplier share limits (anti-capture)
+        4. Reputation threshold (min-gate)
+
+        NO DISCRETION - selection is algorithmic and auditable.
+
+        Args:
+            tender_id: Tender ID
+            selection_seed: Optional seed for auditable randomness
+            actor_id: Actor (typically "system")
+
+        Returns:
+            Updated tender dict with selected_supplier_id
+        """
+        command = SelectSupplier(
+            tender_id=tender_id,
+            selection_seed=selection_seed,
+        )
+
+        # Get current version for optimistic locking
+        tender = self.tender_registry.get(tender_id)
+        current_version = tender.get("version", 0) if tender else 0
+
+        events = self.resource_handlers.handle_select_supplier(
+            command,
+            generate_id(),
+            actor_id,
+            self.tender_registry,
+            self.supplier_registry,
+        )
+
+        # Store events and update projections
+        for event in events:
+            # Create new event with correct version (events are immutable)
+            versioned_event = create_event(
+                event_id=event.event_id,
+                stream_id=event.stream_id,
+                stream_type=event.stream_type,
+                event_type=event.event_type,
+                occurred_at=event.occurred_at,
+                actor_id=event.actor_id,
+                command_id=event.command_id,
+                payload=event.payload,
+                version=current_version + 1,
+            )
+            self.event_store.append(versioned_event.stream_id, current_version, [versioned_event])
+            self.tender_registry.apply_event(versioned_event)
+            current_version = versioned_event.version
+
+        return self.tender_registry.get(tender_id)
+
+    def award_tender(
+        self,
+        tender_id: str,
+        contract_value: Any,
+        contract_terms: dict[str, Any],
+        actor_id: str = "system",
+    ) -> dict[str, Any]:
+        """
+        Award tender to selected supplier
+
+        Args:
+            tender_id: Tender ID
+            contract_value: Final contract value
+            contract_terms: Contract terms, payment schedule, etc.
+            actor_id: Actor awarding tender
+
+        Returns:
+            Updated tender dict
+        """
+        command = AwardTender(
+            tender_id=tender_id,
+            contract_value=contract_value,
+            contract_terms=contract_terms,
+        )
+
+        # Get current version for optimistic locking
+        tender = self.tender_registry.get(tender_id)
+        current_version = tender.get("version", 0) if tender else 0
+
+        events = self.resource_handlers.handle_award_tender(
+            command, generate_id(), actor_id, self.tender_registry
+        )
+
+        # Store events and update projections
+        for event in events:
+            if event.event_type == "TenderAwarded":
+                # Create new event with correct version (events are immutable)
+                versioned_event = create_event(
+                    event_id=event.event_id,
+                    stream_id=event.stream_id,
+                    stream_type=event.stream_type,
+                    event_type=event.event_type,
+                    occurred_at=event.occurred_at,
+                    actor_id=event.actor_id,
+                    command_id=event.command_id,
+                    payload=event.payload,
+                    version=current_version + 1,
+                )
+                self.event_store.append(versioned_event.stream_id, current_version, [versioned_event])
+                self.tender_registry.apply_event(versioned_event)
+                self.supplier_registry.apply_event(versioned_event)
+                current_version = versioned_event.version
+
+        return self.tender_registry.get(tender_id)
+
+    def record_milestone(
+        self,
+        tender_id: str,
+        milestone_id: str,
+        milestone_type: str,
+        description: str,
+        evidence: list[dict[str, Any]] | None = None,
+        metadata: dict[str, Any] | None = None,
+        actor_id: str = "system",
+    ) -> dict[str, Any]:
+        """
+        Record delivery milestone with evidence
+
+        Tracks progress through tender execution. Critical milestones should
+        include evidence.
+
+        Args:
+            tender_id: Tender ID
+            milestone_id: Milestone identifier
+            milestone_type: Type (started, progress, completed, test_passed, test_failed, delayed)
+            description: Milestone description
+            evidence: Supporting evidence (optional but recommended)
+            metadata: Additional milestone context
+            actor_id: Actor recording milestone
+
+        Returns:
+            Milestone record dict
+        """
+        from freedom_that_lasts.resource.commands import EvidenceSpec, RecordMilestone
+
+        # Convert evidence dicts to EvidenceSpec objects
+        evidence_specs = [EvidenceSpec(**ev) for ev in (evidence or [])]
+
+        command = RecordMilestone(
+            tender_id=tender_id,
+            milestone_id=milestone_id,
+            milestone_type=milestone_type,
+            description=description,
+            evidence=evidence_specs,
+            metadata=metadata or {},
+        )
+
+        events = self.resource_handlers.handle_record_milestone(
+            command, generate_id(), actor_id, self.tender_registry
+        )
+
+        # Store events and update projections
+        # Milestones use a separate delivery stream to avoid tender version conflicts
+        for event in events:
+            if event.event_type == "MilestoneRecorded":
+                delivery_stream_id = event.stream_id  # Already formatted as delivery-{tender_id}
+                # Get current delivery stream version
+                delivery_events = self.event_store.load_stream(delivery_stream_id)
+                delivery_version = len(delivery_events)  # Next version
+
+                versioned_event = create_event(
+                    event_id=event.event_id,
+                    stream_id=event.stream_id,
+                    stream_type=event.stream_type,
+                    event_type=event.event_type,
+                    occurred_at=event.occurred_at,
+                    actor_id=event.actor_id,
+                    command_id=event.command_id,
+                    payload=event.payload,
+                    version=delivery_version + 1,
+                )
+                self.event_store.append(delivery_stream_id, delivery_version, [versioned_event])
+                self.delivery_log.apply_event(versioned_event)
+
+        return event.payload
+
+    def record_sla_breach(
+        self,
+        tender_id: str,
+        sla_metric: str,
+        expected_value: Any,
+        actual_value: Any,
+        severity: str,
+        impact_description: str,
+        actor_id: str = "system",
+    ) -> dict[str, Any]:
+        """
+        Record SLA breach during delivery
+
+        Tracks quality issues. Severe breaches may impact supplier reputation.
+
+        Args:
+            tender_id: Tender ID
+            sla_metric: Breached SLA metric
+            expected_value: Expected SLA value
+            actual_value: Actual value
+            severity: Severity level (minor, major, critical)
+            impact_description: Impact of breach
+            actor_id: Actor recording breach
+
+        Returns:
+            SLA breach record dict
+        """
+        from freedom_that_lasts.resource.commands import RecordSLABreach
+
+        command = RecordSLABreach(
+            tender_id=tender_id,
+            sla_metric=sla_metric,
+            expected_value=expected_value,
+            actual_value=actual_value,
+            severity=severity,
+            impact_description=impact_description,
+        )
+
+        events = self.resource_handlers.handle_record_sla_breach(
+            command, generate_id(), actor_id, self.tender_registry
+        )
+
+        # Store events and update projections
+        # SLA breaches use a separate delivery stream to avoid tender version conflicts
+        for event in events:
+            if event.event_type == "SLABreachDetected":
+                delivery_stream_id = event.stream_id  # Already formatted as delivery-{tender_id}
+                # Get current delivery stream version
+                delivery_events = self.event_store.load_stream(delivery_stream_id)
+                delivery_version = len(delivery_events)  # Next version
+
+                versioned_event = create_event(
+                    event_id=event.event_id,
+                    stream_id=event.stream_id,
+                    stream_type=event.stream_type,
+                    event_type=event.event_type,
+                    occurred_at=event.occurred_at,
+                    actor_id=event.actor_id,
+                    command_id=event.command_id,
+                    payload=event.payload,
+                    version=delivery_version + 1,
+                )
+                self.event_store.append(delivery_stream_id, delivery_version, [versioned_event])
+                self.delivery_log.apply_event(versioned_event)
+
+        return event.payload
+
+    def complete_tender(
+        self,
+        tender_id: str,
+        completion_report: dict[str, Any],
+        final_quality_score: float,
+        actor_id: str = "system",
+    ) -> dict[str, Any]:
+        """
+        Complete tender with quality assessment
+
+        Updates supplier reputation based on delivery quality.
+
+        Args:
+            tender_id: Tender ID
+            completion_report: Completion details and metrics
+            final_quality_score: Quality score 0.0-1.0
+            actor_id: Actor completing tender
+
+        Returns:
+            Updated tender dict
+        """
+        command = CompleteTender(
+            tender_id=tender_id,
+            completion_report=completion_report,
+            final_quality_score=final_quality_score,
+        )
+
+        # Get current versions for both tender and supplier
+        tender = self.tender_registry.get(tender_id)
+        tender_version = tender.get("version", 0) if tender else 0
+
+        events = self.resource_handlers.handle_complete_tender(
+            command,
+            generate_id(),
+            actor_id,
+            self.tender_registry,
+            self.supplier_registry,
+        )
+
+        # Store events and update projections
+        for event in events:
+            if event.event_type == "TenderCompleted":
+                # Create new event with correct version (events are immutable)
+                versioned_event = create_event(
+                    event_id=event.event_id,
+                    stream_id=event.stream_id,
+                    stream_type=event.stream_type,
+                    event_type=event.event_type,
+                    occurred_at=event.occurred_at,
+                    actor_id=event.actor_id,
+                    command_id=event.command_id,
+                    payload=event.payload,
+                    version=tender_version + 1,
+                )
+                self.event_store.append(versioned_event.stream_id, tender_version, [versioned_event])
+                self.tender_registry.apply_event(versioned_event)
+                self.delivery_log.apply_event(versioned_event)
+                tender_version = versioned_event.version
+            elif event.event_type == "ReputationUpdated":
+                supplier_id = event.stream_id
+                supplier = self.supplier_registry.get(supplier_id)
+                supplier_version = supplier.get("version", 0) if supplier else 0
+                # Create new event with correct version (events are immutable)
+                versioned_event = create_event(
+                    event_id=event.event_id,
+                    stream_id=event.stream_id,
+                    stream_type=event.stream_type,
+                    event_type=event.event_type,
+                    occurred_at=event.occurred_at,
+                    actor_id=event.actor_id,
+                    command_id=event.command_id,
+                    payload=event.payload,
+                    version=supplier_version + 1,
+                )
+                self.event_store.append(supplier_id, supplier_version, [versioned_event])
+                self.supplier_registry.apply_event(versioned_event)
+
+        return self.tender_registry.get(tender_id)
+
+    def list_suppliers(
+        self, capability_type: str | None = None
+    ) -> list[dict[str, Any]]:
+        """
+        List suppliers
+
+        Args:
+            capability_type: Optional capability type to filter by
+
+        Returns:
+            List of supplier dicts
+        """
+        if capability_type:
+            return self.supplier_registry.list_by_capability(capability_type)
+        else:
+            return self.supplier_registry.list_all()
+
+    def list_tenders(
+        self, law_id: str | None = None, status: str | None = None
+    ) -> list[dict[str, Any]]:
+        """
+        List tenders
+
+        Args:
+            law_id: Optional law ID to filter by
+            status: Optional status to filter by
+
+        Returns:
+            List of tender dicts
+        """
+        if law_id:
+            return self.tender_registry.list_by_law(law_id)
+        elif status:
+            from freedom_that_lasts.resource.models import TenderStatus
+
+            return self.tender_registry.list_by_status(TenderStatus(status))
+        else:
+            return list(self.tender_registry.tenders.values())

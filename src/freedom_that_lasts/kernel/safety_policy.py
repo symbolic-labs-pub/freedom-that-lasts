@@ -127,6 +127,38 @@ class SafetyPolicy(BaseModel):
         description="Warning threshold for CRITICAL items concentration (% of total)",
     )
 
+    # Procurement safeguards (anti-capture)
+    supplier_share_warn_threshold: float = Field(
+        default=0.20,
+        ge=0.0,
+        le=1.0,
+        description="Warning threshold for single supplier share of total procurement value (20%)",
+    )
+
+    supplier_share_halt_threshold: float = Field(
+        default=0.35,
+        ge=0.0,
+        le=1.0,
+        description="Halt threshold - supplier excluded from rotation above this share (35%)",
+    )
+
+    supplier_min_reputation_threshold: float | None = Field(
+        default=0.60,
+        ge=0.0,
+        le=1.0,
+        description="Minimum reputation score required for supplier selection (None = no threshold)",
+    )
+
+    evidence_expiry_enforcement: Literal["STRICT", "RELAXED"] = Field(
+        default="STRICT",
+        description="Evidence expiry mode: STRICT (expired evidence invalidates claim) or RELAXED (warning only)",
+    )
+
+    feasible_set_empty_action: Literal["HALT", "WARN"] = Field(
+        default="HALT",
+        description="Action when feasible set is empty: HALT (block tender) or WARN (emit warning event)",
+    )
+
     model_config = {
         "frozen": False,  # Policy can be updated (but changes are evented)
         "json_schema_extra": {
