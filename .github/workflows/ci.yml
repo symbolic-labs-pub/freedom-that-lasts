@@ -1,0 +1,214 @@
+name: CI
+
+# Fun fact: GitHub Actions was launched in 2019, making CI/CD accessible to millions of developers!
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC - because maintenance never sleeps!
+  workflow_dispatch:  # Manual trigger for the control enthusiasts
+
+# Cancel in-progress runs for same branch to prevent badge update races
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write  # For gh-pages deployment
+  pull-requests: write  # For PR comments
+
+jobs:
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build test Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.test
+          tags: ftl-test:latest
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run tests with coverage
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}/coverage:/app/coverage \
+            -v ${{ github.workspace }}/test-results:/app/test-results \
+            ftl-test:latest
+
+      - name: Extract coverage percentage
+        id: coverage
+        run: |
+          COVERAGE=$(python3 -c "import json; data=json.load(open('coverage/coverage.json')); print(f\"{data['totals']['percent_covered']:.2f}\")")
+          echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
+          echo "Coverage: $COVERAGE%"
+
+          # Determine badge color based on coverage thresholds
+          if (( $(echo "$COVERAGE >= 90" | bc -l) )); then
+            COLOR="brightgreen"
+          elif (( $(echo "$COVERAGE >= 75" | bc -l) )); then
+            COLOR="green"
+          elif (( $(echo "$COVERAGE >= 60" | bc -l) )); then
+            COLOR="yellow"
+          else
+            COLOR="red"
+          fi
+          echo "color=$COLOR" >> $GITHUB_OUTPUT
+          echo "Badge color: $COLOR"
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: |
+            coverage/coverage.xml
+            coverage/coverage.json
+            coverage/htmlcov/
+          retention-days: 30
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: test-results/junit.xml
+          retention-days: 30
+
+      - name: Upload coverage JSON for badge
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-json
+          path: coverage/coverage.json
+          retention-days: 1  # Only needed for badge generation
+
+      - name: Comment coverage on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const coverage = '${{ steps.coverage.outputs.percentage }}';
+            const color = '${{ steps.coverage.outputs.color }}';
+            const body = `## Test Coverage Report\n\n**Coverage**: ${coverage}% (${color})\n\n_Coverage data from latest test run._`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+    outputs:
+      coverage: ${{ steps.coverage.outputs.percentage }}
+      badge_color: ${{ steps.coverage.outputs.color }}
+
+  generate-badges:
+    name: Generate Coverage Badge
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'  # Only update badges on master branch
+
+    steps:
+      - name: Download coverage JSON
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-json
+
+      - name: Generate SVG badge
+        run: |
+          # Pure Python SVG generation - no external dependencies!
+          # Fun fact: SVG has been a web standard since 2001, predating most modern web frameworks
+          python3 << 'EOF'
+          import json
+          import os
+
+          # Load coverage data
+          with open('coverage.json') as f:
+              data = json.load(f)
+
+          coverage = data['totals']['percent_covered']
+          coverage_str = f"{coverage:.0f}%"
+
+          # Determine color
+          if coverage >= 90:
+              color = '#4c1'  # brightgreen
+          elif coverage >= 75:
+              color = '#97ca00'  # green
+          elif coverage >= 60:
+              color = '#dfb317'  # yellow
+          else:
+              color = '#e05d44'  # red
+
+          # Generate shields.io-compatible SVG badge
+          # Width calculation: "coverage" (54) + percentage width (54) = 108px
+          svg = f'''<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="108" height="20" role="img" aria-label="coverage: {coverage_str}">
+            <title>coverage: {coverage_str}</title>
+            <linearGradient id="s" x2="0" y2="100%">
+              <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
+              <stop offset="1" stop-opacity=".1"/>
+            </linearGradient>
+            <clipPath id="r">
+              <rect width="108" height="20" rx="3" fill="#fff"/>
+            </clipPath>
+            <g clip-path="url(#r)">
+              <rect width="61" height="20" fill="#555"/>
+              <rect x="61" width="47" height="20" fill="{color}"/>
+              <rect width="108" height="20" fill="url(#s)"/>
+            </g>
+            <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="110">
+              <text aria-hidden="true" x="315" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="510">coverage</text>
+              <text x="315" y="140" transform="scale(.1)" fill="#fff" textLength="510">coverage</text>
+              <text aria-hidden="true" x="835" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="{len(coverage_str)*60}">{coverage_str}</text>
+              <text x="835" y="140" transform="scale(.1)" fill="#fff" textLength="{len(coverage_str)*60}">{coverage_str}</text>
+            </g>
+          </svg>'''
+
+          # Create badges directory and write SVG
+          os.makedirs('badges', exist_ok=True)
+          with open('badges/coverage.svg', 'w') as f:
+              f.write(svg)
+
+          print(f"Generated coverage badge: {coverage_str} ({color})")
+          EOF
+
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./badges
+          destination_dir: badges
+          commit_message: 'Update coverage badge [skip ci]'
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+
+  summary:
+    name: Workflow Summary
+    needs: [test]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Coverage**: ${{ needs.test.outputs.coverage }}%" >> $GITHUB_STEP_SUMMARY
+          echo "**Badge Color**: ${{ needs.test.outputs.badge_color }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ github.ref }}" == "refs/heads/master" ]; then
+            echo "Badges updated on master branch" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "_Badges not updated (not master branch)_" >> $GITHUB_STEP_SUMMARY
+          fi

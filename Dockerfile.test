@@ -1,0 +1,33 @@
+# Multi-stage Dockerfile for running tests with coverage
+# Fun fact: Docker was released in 2013 and revolutionized how we package and deploy applications!
+
+FROM python:3.11-slim AS test
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy project files
+COPY pyproject.toml README.md ./
+COPY src/ src/
+COPY tests/ tests/
+
+# Install dependencies (production + dev)
+RUN pip install --no-cache-dir -e ".[dev]"
+
+# Create directories for coverage and test outputs
+RUN mkdir -p /app/coverage /app/test-results
+
+# Run tests with coverage by default
+# Coverage outputs: XML (for tools), JSON (for badge), HTML (for humans), term-missing (for CI logs)
+CMD ["pytest", \
+     "--cov=freedom_that_lasts", \
+     "--cov-report=xml:/app/coverage/coverage.xml", \
+     "--cov-report=json:/app/coverage/coverage.json", \
+     "--cov-report=html:/app/coverage/htmlcov", \
+     "--cov-report=term-missing", \
+     "--junitxml=/app/test-results/junit.xml", \
+     "-v"]
