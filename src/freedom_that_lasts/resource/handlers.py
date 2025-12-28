@@ -612,141 +612,141 @@ class ResourceCommandHandlers:
                 attempted_by=actor_id,
             ).model_dump(mode="json")
 
-            return [
-                create_event(
-                    event_id=generate_id(),
-                    event_type="SupplierSelectionFailed",
-                    stream_id=command.tender_id,
-                    stream_type="Tender",
-                    occurred_at=now,
-                    actor_id=actor_id,
-                    command_id=command_id,
-                    payload=event_payload,
-                    version=1,
-                )
+                return [
+                    create_event(
+                        event_id=generate_id(),
+                        event_type="SupplierSelectionFailed",
+                        stream_id=command.tender_id,
+                        stream_type="Tender",
+                        occurred_at=now,
+                        actor_id=actor_id,
+                        command_id=command_id,
+                        payload=event_payload,
+                        version=1,
+                    )
+                ]
+
+            # Load supplier data for feasible set
+            feasible_suppliers = [
+                supplier_registry.get(sid) for sid in feasible_supplier_ids
             ]
+            feasible_suppliers = [s for s in feasible_suppliers if s is not None]
 
-        # Load supplier data for feasible set
-        feasible_suppliers = [
-            supplier_registry.get(sid) for sid in feasible_supplier_ids
-        ]
-        feasible_suppliers = [s for s in feasible_suppliers if s is not None]
+            if not feasible_suppliers:
+                event_payload = events.SupplierSelectionFailed(
+                    tender_id=command.tender_id,
+                    failure_reason="Feasible suppliers not found in registry",
+                    empty_feasible_set=True,
+                    attempted_at=now,
+                    attempted_by=actor_id,
+                ).model_dump(mode="json")
 
-        if not feasible_suppliers:
-            event_payload = events.SupplierSelectionFailed(
-                tender_id=command.tender_id,
-                failure_reason="Feasible suppliers not found in registry",
-                empty_feasible_set=True,
-                attempted_at=now,
-                attempted_by=actor_id,
-            ).model_dump(mode="json")
+                return [
+                    create_event(
+                        event_id=generate_id(),
+                        event_type="SupplierSelectionFailed",
+                        stream_id=command.tender_id,
+                        stream_type="Tender",
+                        occurred_at=now,
+                        actor_id=actor_id,
+                        command_id=command_id,
+                        payload=event_payload,
+                        version=1,
+                    )
+                ]
 
-            return [
-                create_event(
-                    event_id=generate_id(),
-                    event_type="SupplierSelectionFailed",
-                    stream_id=command.tender_id,
-                    stream_type="Tender",
-                    occurred_at=now,
-                    actor_id=actor_id,
-                    command_id=command_id,
-                    payload=event_payload,
-                    version=1,
-                )
-            ]
-
-        # GATE 2: Selection method matches tender config
-        tender_selection_method = SelectionMethod(tender.get("selection_method"))
-        invariants.validate_selection_method(
-            tender_selection_method, tender_selection_method
-        )
-
-        # GATE 3: Supplier share limits (anti-capture)
-        # Filter out suppliers exceeding share threshold
-        # BUT: Only enforce this if contracts have been awarded (total_value > 0)
-        # Don't block first procurement due to concentration limits
-        all_suppliers = supplier_registry.list_all()
-        from freedom_that_lasts.resource.selection import compute_supplier_shares
-
-        shares = compute_supplier_shares(all_suppliers)
-        total_value = sum(
-            s.get("total_value_awarded", Decimal("0")) for s in all_suppliers
-        )
-        share_limit = self.safety_policy.supplier_share_halt_threshold
-
-        eligible_suppliers = []
-        for supplier in feasible_suppliers:
-            supplier_id = supplier["supplier_id"]
-            supplier_share = shares.get(supplier_id, 0.0)
-
-            # Only enforce concentration limits if procurement has actually happened
-            if total_value > 0:
-                try:
-                    invariants.validate_supplier_share_limit(supplier_share, share_limit)
-                    eligible_suppliers.append(supplier)
-                except invariants.SupplierShareExceededError:
-                    # Skip this supplier (excluded by concentration limit)
-                    pass
-            else:
-                # No contracts awarded yet - don't enforce concentration limits
-                eligible_suppliers.append(supplier)
-
-        if not eligible_suppliers:
-            event_payload = events.SupplierSelectionFailed(
-                tender_id=command.tender_id,
-                failure_reason="All feasible suppliers exceed share concentration limit",
-                empty_feasible_set=False,
-                attempted_at=now,
-                attempted_by=actor_id,
-            ).model_dump(mode="json")
-
-            return [
-                create_event(
-                    event_id=generate_id(),
-                    event_type="SupplierSelectionFailed",
-                    stream_id=command.tender_id,
-                    stream_type="Tender",
-                    occurred_at=now,
-                    actor_id=actor_id,
-                    command_id=command_id,
-                    payload=event_payload,
-                    version=1,
-                )
-            ]
-
-        # GATE 4: Reputation threshold (if configured)
-        # BUT: Only enforce this if contracts have been awarded (total_value > 0)
-        # New suppliers need a chance to build reputation through first delivery
-        min_reputation = self.safety_policy.supplier_min_reputation_threshold
-        if min_reputation is not None and total_value > 0:
-            from freedom_that_lasts.resource.selection import apply_reputation_threshold
-
-            eligible_suppliers = apply_reputation_threshold(
-                eligible_suppliers, min_reputation
+            # GATE 2: Selection method matches tender config
+            tender_selection_method = SelectionMethod(tender.get("selection_method"))
+            invariants.validate_selection_method(
+                tender_selection_method, tender_selection_method
             )
 
-        if not eligible_suppliers:
-            event_payload = events.SupplierSelectionFailed(
-                tender_id=command.tender_id,
-                failure_reason=f"No suppliers meet minimum reputation threshold {min_reputation}",
-                empty_feasible_set=False,
-                attempted_at=now,
-                attempted_by=actor_id,
-            ).model_dump(mode="json")
+            # GATE 3: Supplier share limits (anti-capture)
+            # Filter out suppliers exceeding share threshold
+            # BUT: Only enforce this if contracts have been awarded (total_value > 0)
+            # Don't block first procurement due to concentration limits
+            all_suppliers = supplier_registry.list_all()
+            from freedom_that_lasts.resource.selection import compute_supplier_shares
 
-            return [
-                create_event(
-                    event_id=generate_id(),
-                    event_type="SupplierSelectionFailed",
-                    stream_id=command.tender_id,
-                    stream_type="Tender",
-                    occurred_at=now,
-                    actor_id=actor_id,
-                    command_id=command_id,
-                    payload=event_payload,
-                    version=1,
+            shares = compute_supplier_shares(all_suppliers)
+            total_value = sum(
+                s.get("total_value_awarded", Decimal("0")) for s in all_suppliers
+            )
+            share_limit = self.safety_policy.supplier_share_halt_threshold
+
+            eligible_suppliers = []
+            for supplier in feasible_suppliers:
+                supplier_id = supplier["supplier_id"]
+                supplier_share = shares.get(supplier_id, 0.0)
+
+                # Only enforce concentration limits if procurement has actually happened
+                if total_value > 0:
+                    try:
+                        invariants.validate_supplier_share_limit(supplier_share, share_limit)
+                        eligible_suppliers.append(supplier)
+                    except invariants.SupplierShareExceededError:
+                        # Skip this supplier (excluded by concentration limit)
+                        pass
+                else:
+                    # No contracts awarded yet - don't enforce concentration limits
+                    eligible_suppliers.append(supplier)
+
+            if not eligible_suppliers:
+                event_payload = events.SupplierSelectionFailed(
+                    tender_id=command.tender_id,
+                    failure_reason="All feasible suppliers exceed share concentration limit",
+                    empty_feasible_set=False,
+                    attempted_at=now,
+                    attempted_by=actor_id,
+                ).model_dump(mode="json")
+
+                return [
+                    create_event(
+                        event_id=generate_id(),
+                        event_type="SupplierSelectionFailed",
+                        stream_id=command.tender_id,
+                        stream_type="Tender",
+                        occurred_at=now,
+                        actor_id=actor_id,
+                        command_id=command_id,
+                        payload=event_payload,
+                        version=1,
+                    )
+                ]
+
+            # GATE 4: Reputation threshold (if configured)
+            # BUT: Only enforce this if contracts have been awarded (total_value > 0)
+            # New suppliers need a chance to build reputation through first delivery
+            min_reputation = self.safety_policy.supplier_min_reputation_threshold
+            if min_reputation is not None and total_value > 0:
+                from freedom_that_lasts.resource.selection import apply_reputation_threshold
+
+                eligible_suppliers = apply_reputation_threshold(
+                    eligible_suppliers, min_reputation
                 )
-            ]
+
+            if not eligible_suppliers:
+                event_payload = events.SupplierSelectionFailed(
+                    tender_id=command.tender_id,
+                    failure_reason=f"No suppliers meet minimum reputation threshold {min_reputation}",
+                    empty_feasible_set=False,
+                    attempted_at=now,
+                    attempted_by=actor_id,
+                ).model_dump(mode="json")
+
+                return [
+                    create_event(
+                        event_id=generate_id(),
+                        event_type="SupplierSelectionFailed",
+                        stream_id=command.tender_id,
+                        stream_type="Tender",
+                        occurred_at=now,
+                        actor_id=actor_id,
+                        command_id=command_id,
+                        payload=event_payload,
+                        version=1,
+                    )
+                ]
 
             # Execute constitutional selection mechanism
             selection_method = tender_selection_method
