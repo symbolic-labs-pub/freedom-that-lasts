@@ -218,3 +218,198 @@ def test_count_operations(event_store: SQLiteEventStore) -> None:
     # Check counts
     assert event_store.count_events() == 6  # 2 streams × 3 events
     assert event_store.count_streams() == 2
+
+
+# =============================================================================
+# Additional Tests for 90%+ Coverage
+# =============================================================================
+
+
+def test_append_empty_events_list(event_store: SQLiteEventStore) -> None:
+    """Test appending empty events list returns empty list"""
+    result = event_store.append("stream-1", 0, [])
+    assert result == []
+
+
+def test_load_all_events_with_from_event_id(event_store: SQLiteEventStore) -> None:
+    """Test load_all_events with from_event_id parameter for pagination"""
+    # Create multiple events across streams
+    events_created = []
+    for i in range(5):
+        event = Event(
+            event_id=generate_id(),
+            stream_id=f"stream-{i % 2}",
+            stream_type="test",
+            event_type="TestEvent",
+            occurred_at=datetime.now(timezone.utc),
+            command_id=generate_id(),
+            payload={"index": i},
+            version=i // 2 + 1,
+        )
+        events_created.append(event)
+        event_store.append(f"stream-{i % 2}", i // 2, [event])
+
+    # Get all events
+    all_events = event_store.load_all_events()
+    assert len(all_events) == 5
+
+    # Get events after second event (pagination)
+    second_event_id = events_created[1].event_id
+    paginated_events = event_store.load_all_events(from_event_id=second_event_id)
+    # Should get events 2, 3, 4 (3 events after the second one)
+    assert len(paginated_events) >= 3
+
+    # Get events with limit
+    limited_events = event_store.load_all_events(limit=2)
+    assert len(limited_events) == 2
+
+    # Test with non-existent from_event_id
+    empty_result = event_store.load_all_events(from_event_id="nonexistent-id")
+    assert empty_result == []
+
+
+def test_query_events_with_stream_type_filter(event_store: SQLiteEventStore) -> None:
+    """Test query_events with stream_type filter"""
+    # Create events with different stream types
+    for i in range(4):
+        event = Event(
+            event_id=generate_id(),
+            stream_id=f"stream-{i}",
+            stream_type="TypeA" if i < 2 else "TypeB",
+            event_type="TestEvent",
+            occurred_at=datetime.now(timezone.utc),
+            command_id=generate_id(),
+            payload={},
+            version=1,
+        )
+        event_store.append(f"stream-{i}", 0, [event])
+
+    # Query by stream_type
+    type_a = event_store.query_events(stream_type="TypeA")
+    assert len(type_a) == 2
+
+    type_b = event_store.query_events(stream_type="TypeB")
+    assert len(type_b) == 2
+
+
+def test_query_events_with_time_filters(event_store: SQLiteEventStore) -> None:
+    """Test query_events with from_time and to_time filters"""
+    from datetime import timedelta
+
+    now = datetime.now(timezone.utc)
+    yesterday = now - timedelta(days=1)
+    tomorrow = now + timedelta(days=1)
+
+    # Create events at different times
+    event1 = Event(
+        event_id=generate_id(),
+        stream_id="stream-1",
+        stream_type="test",
+        event_type="TestEvent",
+        occurred_at=yesterday,
+        command_id=generate_id(),
+        payload={"when": "yesterday"},
+        version=1,
+    )
+    event_store.append("stream-1", 0, [event1])
+
+    event2 = Event(
+        event_id=generate_id(),
+        stream_id="stream-2",
+        stream_type="test",
+        event_type="TestEvent",
+        occurred_at=now,
+        command_id=generate_id(),
+        payload={"when": "now"},
+        version=1,
+    )
+    event_store.append("stream-2", 0, [event2])
+
+    # Query with from_time
+    recent_events = event_store.query_events(from_time=yesterday)
+    assert len(recent_events) == 2
+
+    # Query with to_time
+    past_events = event_store.query_events(to_time=now)
+    assert len(past_events) == 2
+
+    # Query with both
+    today_events = event_store.query_events(from_time=yesterday, to_time=tomorrow)
+    assert len(today_events) == 2
+
+
+def test_query_events_with_limit(event_store: SQLiteEventStore) -> None:
+    """Test query_events with limit parameter"""
+    # Create multiple events
+    for i in range(5):
+        event = Event(
+            event_id=generate_id(),
+            stream_id=f"stream-{i}",
+            stream_type="test",
+            event_type="TestEvent",
+            occurred_at=datetime.now(timezone.utc),
+            command_id=generate_id(),
+            payload={},
+            version=1,
+        )
+        event_store.append(f"stream-{i}", 0, [event])
+
+    # Query with limit
+    limited = event_store.query_events(limit=3)
+    assert len(limited) == 3
+
+
+def test_query_events_with_multiple_filters(event_store: SQLiteEventStore) -> None:
+    """Test query_events with combined filters"""
+    from datetime import timedelta
+
+    now = datetime.now(timezone.utc)
+
+    # Create events
+    event1 = Event(
+        event_id=generate_id(),
+        stream_id="stream-1",
+        stream_type="TypeA",
+        event_type="EventX",
+        occurred_at=now,
+        command_id=generate_id(),
+        payload={},
+        version=1,
+    )
+    event_store.append("stream-1", 0, [event1])
+
+    event2 = Event(
+        event_id=generate_id(),
+        stream_id="stream-2",
+        stream_type="TypeA",
+        event_type="EventY",
+        occurred_at=now,
+        command_id=generate_id(),
+        payload={},
+        version=1,
+    )
+    event_store.append("stream-2", 0, [event2])
+
+    event3 = Event(
+        event_id=generate_id(),
+        stream_id="stream-3",
+        stream_type="TypeB",
+        event_type="EventX",
+        occurred_at=now,
+        command_id=generate_id(),
+        payload={},
+        version=1,
+    )
+    event_store.append("stream-3", 0, [event3])
+
+    # Query with stream_type and event_type
+    filtered = event_store.query_events(stream_type="TypeA", event_type="EventX")
+    assert len(filtered) == 1
+    assert filtered[0].stream_id == "stream-1"
+
+
+def test_load_stream_returns_empty_for_nonexistent(event_store: SQLiteEventStore) -> None:
+    """Test load_stream returns empty list for nonexistent stream"""
+    # This covers the branch where events list is empty (line 289->299)
+    events = event_store.load_stream("nonexistent-stream")
+    assert events == []
