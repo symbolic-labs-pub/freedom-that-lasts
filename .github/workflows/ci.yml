@@ -41,8 +41,14 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Create output directories
+        run: |
+          mkdir -p coverage test-results
+          # Set permissions for Docker container user (UID 1001)
+          chmod 777 coverage test-results
+
       - name: Run tests with coverage
-        continue-on-error: true  # Continue even if tests fail (e.g., 3 known CLI failures)
+        continue-on-error: true  # Continue even if tests fail
         run: |
           docker run --rm \
             -v ${{ github.workspace }}/coverage:/app/coverage \
