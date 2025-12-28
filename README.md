@@ -41,15 +41,6 @@ Freedom That Lasts is a Python package implementing the governance concepts from
 - **Auditable Selection**: Deterministic seed-based randomness with cryptographic strength
 - **Reputation System**: Performance-based scoring with automatic threshold enforcement
 
-### Security & Infrastructure
-- **Cryptographic RNG**: Secure random generation for correlation IDs and selection mechanisms
-- **Path Traversal Protection**: Validated database paths with canonical resolution
-- **HTTP Security Headers**: CSP, HSTS, X-Frame-Options, XSS protection
-- **Rate Limiting**: Graduated limits on health endpoints (10-30 req/min)
-- **PII Redaction**: Automatic log sanitization for privacy-by-default
-- **Container Hardening**: Read-only filesystems, non-root users, localhost binding
-- **Supply Chain Security**: Pinned Docker images and GitHub Actions to commit SHAs
-
 ## Quick Start (60 seconds)
 
 ### Python API
@@ -177,7 +168,7 @@ ftl expenditure list --budget <id>
 
 ```bash
 # From source
-git clone https://github.com/freedom-that-lasts/freedom-that-lasts
+git clone https://github.com/symbolic-labs-pub/freedom-that-lasts
 cd freedom-that-lasts
 pip install -e ".[dev]"
 
