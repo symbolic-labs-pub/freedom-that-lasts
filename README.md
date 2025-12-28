@@ -183,7 +183,7 @@ python examples/budget_example.py   # Budget module examples
 
 ## Current Status:
 
-### ✅ v0.1: Governance Kernel
+### v0.1: Governance Kernel
 - **Kernel**: Event store (SQLite), projection store, IDs (UUIDv7), time abstraction, SafetyPolicy
 - **Law Module**: Workspace management, delegation DAG with TTL/expiry, law lifecycle (DRAFT→ACTIVE→REVIEW→SUNSET)
 - **Safeguards**: Delegation concentration metrics (Gini), FreedomHealth scorecard, reflex triggers
@@ -194,7 +194,7 @@ python examples/budget_example.py   # Budget module examples
 - **Examples**: city_pilot.py, replay_demo.py
 - **Tests**: 76 tests, 72% coverage
 
-### ✅ v0.2: Budget Module
+### v0.2: Budget Module
 - **Budget Aggregate**: Law-scoped budgets with flex classes (CRITICAL/IMPORTANT/ASPIRATIONAL)
 - **Multi-Gate Enforcement**: Step-size (5%/15%/50%), balance (zero-sum), authority, limits
 - **Commands & Events**: CreateBudget, ActivateBudget, AdjustAllocation, ApproveExpenditure, CloseBudget
@@ -207,7 +207,7 @@ python examples/budget_example.py   # Budget module examples
 - **Tests**: 22 budget tests (invariants, handlers, projections, triggers, integration, CLI)
 - **Coverage**: 87% invariants, 87% handlers, 83% projections, 100% triggers
 
-### ✅ v0.3: Resources Module
+### v0.3: Resources Module
 - **Tender Aggregate**: Law-scoped procurement with constitutional supplier selection
 - **Selection Mechanisms**: Rotation (load-balancing), random (fairness), hybrid (balanced)
 - **Feasibility Constraints**: Capacity, certification, experience, reputation thresholds
@@ -221,7 +221,7 @@ python examples/budget_example.py   # Budget module examples
 - **Tests**: 30+ resource tests (selection algorithms, constraints, projections, triggers)
 - **Coverage**: 85%+ across all resource components
 
-### ✅ v1.0: Security & Hardening
+### v1.0: Security & Hardening
 - **Cryptographic RNG**: `secrets.token_urlsafe()` for correlation IDs, SHA-256 for deterministic selection
 - **Path Traversal Protection**: Validated database paths with canonical resolution and base directory enforcement
 - **HTTP Security Headers**: CSP, HSTS, X-Frame-Options, X-Content-Type-Options, XSS protection
