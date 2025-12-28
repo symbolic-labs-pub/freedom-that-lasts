@@ -310,4 +310,4 @@ Based on the book "Freedom That Lasts" which formalizes freedom as future option
 
 ---
 
-**Fun Fact**: The average lifespan of a democracy is around 200 years. This system aims to extend that by making freedom structurally stable, not just aspirational.
+**Fun Fact**: The average lifespan of a democracy is around 200 years. This framework aims to extend that by making freedom structurally stable, not just aspirational.
