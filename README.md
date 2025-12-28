@@ -1,5 +1,7 @@
 # Freedom That Lasts
 
+## Buy the book for the full experience, to see the full picture:
+
 **Event-sourced governance kernel preserving future option space through revocable delegation, time-bound learning laws, and anti-tyranny safeguards.**
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
