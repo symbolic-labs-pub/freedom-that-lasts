@@ -186,7 +186,8 @@ pytest
 
 # Run examples
 python examples/city_pilot.py       # Law & delegation example
-python examples/budget_example.py   # Budget module examples (v0.2)
+python examples/budget_example.py   # Budget module examples
+# TODO: if not exists then write and reference resource examples here...
 ```
 
 ## Current Status:
