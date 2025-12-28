@@ -25,7 +25,7 @@ Freedom That Lasts is a Python package implementing the governance concepts from
 - **Privacy-by-Default**: Aggregate transparency without individual coercion
 - **FreedomHealth Scorecard**: Real-time risk monitoring (GREEN/YELLOW/RED)
 
-### Budget Module (v0.2)
+### Budget Module
 - **Law-Scoped Budgets**: Each budget tied to a specific law
 - **Flex Classes**: CRITICAL (5%), IMPORTANT (15%), ASPIRATIONAL (50%) step-size limits
 - **Multi-Gate Enforcement**: 4 independent validation gates (step-size, balance, authority, limits)
@@ -35,7 +35,7 @@ Freedom That Lasts is a Python package implementing the governance concepts from
 - **Graduated Constraints**: Large cuts require many small steps (anti-manipulation)
 
 ### Resources Module
-- add key features here
+- add key features here...
 
 ## Quick Start (60 seconds)
 
