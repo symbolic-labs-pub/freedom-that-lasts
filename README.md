@@ -12,7 +12,7 @@
 
 Freedom That Lasts is a Python package implementing the governance concepts from the book "Freedom That Lasts" as deterministic, auditable code. It demonstrates that freedom can be structurally stable, not just aspirational.
 
-**Core Philosophy**: Minimal code that fully expresses the theory. Every line implements an anti-tyranny safeguard.
+**Core Philosophy**: Minimal code that fully expresses the theory.
 
 ## Key Features
 
@@ -33,6 +33,9 @@ Freedom That Lasts is a Python package implementing the governance concepts from
 - **Complete Audit Trail**: Every adjustment and expenditure logged as immutable event
 - **Automatic Triggers**: Balance violations and overspending detected automatically
 - **Graduated Constraints**: Large cuts require many small steps (anti-manipulation)
+
+### Resources Module
+- add key features here
 
 ## Quick Start (60 seconds)
 
