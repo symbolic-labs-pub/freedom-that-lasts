@@ -58,6 +58,7 @@ def configure_logging(
     *,
     json_output: bool = False,
     log_level: str = "INFO",
+    stream: Any = None,
 ) -> None:
     """
     Configure structured logging for the application.
@@ -66,14 +67,19 @@ def configure_logging(
         json_output: If True, output JSON logs (for production).
                     If False, output human-readable console logs (for development).
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        stream: Output stream (defaults to stderr for better CLI compatibility)
     """
     # Convert log level string to logging constant
     level = getattr(logging, log_level.upper())
 
+    # Default to stderr (best practice - separates logs from program output)
+    if stream is None:
+        stream = sys.stderr
+
     # Configure stdlib logging
     logging.basicConfig(
         format="%(message)s",
-        stream=sys.stdout,
+        stream=stream,
         level=level,
     )
 

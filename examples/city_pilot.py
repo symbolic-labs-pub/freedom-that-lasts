@@ -6,7 +6,7 @@ This example demonstrates using Freedom That Lasts for a city health
 department implementing a new primary care pilot program.
 
 Scenario:
-- Budapest health department wants to pilot improved primary care access
+- Albuquerque health department wants to pilot improved primary care access
 - Pilot covers District 5, 6-month duration
 - Authority delegated from Health Commissioner to District Manager
 - Law created with mandatory review checkpoints
@@ -60,7 +60,7 @@ def print_health(ftl: FTL) -> None:
 def main() -> None:
     """Run city health services pilot example"""
 
-    print_section("Budapest Health Services Pilot - Freedom That Lasts")
+    print_section("Albuquerque Health Services Pilot - Freedom That Lasts")
 
     # Create temporary database for demo
     db_path = Path(tempfile.mktemp(suffix=".db"))
@@ -79,15 +79,15 @@ def main() -> None:
     print_section("Step 1: Create Workspace Hierarchy")
 
     health_dept = ftl.create_workspace(
-        name="Budapest Health Department",
-        scope={"territory": "Budapest", "domain": "healthcare"},
+        name="Albuquerque Health Department",
+        scope={"territory": "Albuquerque", "domain": "healthcare"},
     )
     print(f"✓ Created workspace: {health_dept['name']}")
     print(f"  ID: {health_dept['workspace_id']}")
 
     district5 = ftl.create_workspace(
         name="District 5 Health Services",
-        scope={"territory": "Budapest District 5", "domain": "healthcare"},
+        scope={"territory": "Albuquerque District 5", "domain": "healthcare"},
     )
     print(f"\n✓ Created workspace: {district5['name']}")
     print(f"  ID: {district5['workspace_id']}")
@@ -118,7 +118,7 @@ def main() -> None:
         workspace_id=district5["workspace_id"],
         title="Primary Care Access Pilot - District 5",
         scope={
-            "territory": "Budapest District 5",
+            "territory": "Albuquerque District 5",
             "valid_days": 180,  # 6-month pilot
             "population_affected": 45000,
         },

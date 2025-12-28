@@ -35,7 +35,20 @@ Freedom That Lasts is a Python package implementing the governance concepts from
 - **Graduated Constraints**: Large cuts require many small steps (anti-manipulation)
 
 ### Resources Module
-- add key features here...
+- **Constitutional Procurement**: Algorithmic supplier selection (rotation, random, hybrid)
+- **Feasibility Constraints**: Capacity, certification, experience, and reputation thresholds
+- **Anti-Capture Safeguards**: Gini coefficient monitoring, concentration alerts
+- **Auditable Selection**: Deterministic seed-based randomness with cryptographic strength
+- **Reputation System**: Performance-based scoring with automatic threshold enforcement
+
+### Security & Infrastructure (v1.0)
+- **Cryptographic RNG**: Secure random generation for correlation IDs and selection mechanisms
+- **Path Traversal Protection**: Validated database paths with canonical resolution
+- **HTTP Security Headers**: CSP, HSTS, X-Frame-Options, XSS protection
+- **Rate Limiting**: Graduated limits on health endpoints (10-30 req/min)
+- **PII Redaction**: Automatic log sanitization for privacy-by-default
+- **Container Hardening**: Read-only filesystems, non-root users, localhost binding
+- **Supply Chain Security**: Pinned Docker images and GitHub Actions to commit SHAs
 
 ## Quick Start (60 seconds)
 
@@ -60,7 +73,7 @@ delegation = ftl.delegate(
 law = ftl.create_law(
     workspace_id=workspace["workspace_id"],
     title="Primary care access pilot",
-    scope={"territory": "Budapest District 5"},
+    scope={"territory": "Albuquerque District 5"},
     reversibility_class="SEMI_REVERSIBLE",
     checkpoints=[30, 90, 180, 365],  # Days until review required
     params={"max_wait_days": 10}
@@ -123,7 +136,7 @@ ftl.approve_expenditure(
 ftl init --db governance.db
 
 # Create workspace
-ftl workspace create --name "Health Services" --scope '{"territory":"Budapest"}'
+ftl workspace create --name "Health Services" --scope '{"territory":"Albuquerque"}'
 
 # Delegate decision rights (max 365 days)
 ftl delegate create --from alice --to bob --workspace <workspace_id> --ttl-days 180
@@ -134,7 +147,7 @@ ftl law create \
   --title "Primary Care Pilot" \
   --reversibility SEMI_REVERSIBLE \
   --checkpoints 30,90,180,365 \
-  --scope '{"territory":"District 5"}'
+  --scope '{"territory":"Albuquerque District 5"}'
 
 # Activate law
 ftl law activate --id <law_id>
@@ -173,7 +186,7 @@ python examples/city_pilot.py       # Law & delegation example
 python examples/budget_example.py   # Budget module examples (v0.2)
 ```
 
-## Current Status: v0.2 COMPLETE
+## Current Status: v1.0 COMPLETE
 
 ### ✅ v0.1: Governance Kernel
 - **Kernel**: Event store (SQLite), projection store, IDs (UUIDv7), time abstraction, SafetyPolicy
@@ -199,9 +212,32 @@ python examples/budget_example.py   # Budget module examples (v0.2)
 - **Tests**: 22 budget tests (invariants, handlers, projections, triggers, integration, CLI)
 - **Coverage**: 87% invariants, 87% handlers, 83% projections, 100% triggers
 
-**Roadmap:**
-- v0.3 (4 weeks): Resource/Procurement module
-- v1.0 (4 weeks): Stabilization, security audit
+### ✅ v0.3: Resources Module
+- **Tender Aggregate**: Law-scoped procurement with constitutional supplier selection
+- **Selection Mechanisms**: Rotation (load-balancing), random (fairness), hybrid (balanced)
+- **Feasibility Constraints**: Capacity, certification, experience, reputation thresholds
+- **Commands & Events**: CreateTender, SubmitBid, EvaluateBids, SelectSupplier, AwardContract
+- **Projections**: TenderRegistry, SupplierRegistry, ContractRegistry
+- **Triggers**: Concentration monitoring, feasibility violations, reputation thresholds
+- **Anti-Capture**: Gini coefficient calculation, supplier share tracking, rotation enforcement
+- **CLI**: 12 tender/supplier/contract commands
+- **Documentation**: ARCHITECTURE.md updated with resource module design
+- **Examples**: procurement_example.py (constitutional selection scenarios)
+- **Tests**: 30+ resource tests (selection algorithms, constraints, projections, triggers)
+- **Coverage**: 85%+ across all resource components
+
+### ✅ v1.0: Security & Hardening
+- **Cryptographic RNG**: `secrets.token_urlsafe()` for correlation IDs, SHA-256 for deterministic selection
+- **Path Traversal Protection**: Validated database paths with canonical resolution and base directory enforcement
+- **HTTP Security Headers**: CSP, HSTS, X-Frame-Options, X-Content-Type-Options, XSS protection
+- **Rate Limiting**: Flask-Limiter with graduated limits (10-30 req/min) on health endpoints
+- **PII Redaction**: Automatic field-based redaction in logs (actor_id, amount, tokens, secrets)
+- **Environment-Aware Logging**: Stack traces suppressed in production (`ENVIRONMENT=production`)
+- **Container Hardening**: Read-only filesystems, tmpfs mounts, non-root users (UID 1001), localhost binding
+- **Supply Chain Security**: Pinned Docker images to specific versions, GitHub Actions to commit SHAs
+- **Dependencies**: CVE scanning (pip-audit), vulnerability database (safety), security analysis (bandit)
+- **Tests**: 252 tests passing, 63% coverage
+- **Documentation**: THREAT_MODEL.md updated with security controls
 
 ## Architecture
 
@@ -215,17 +251,22 @@ Event Sourcing Foundation
 Domain Modules
 ├── Law (delegation, lifecycle, checkpoints) [v0.1]
 ├── Budget (flex classes, multi-gate enforcement) [v0.2]
+├── Resources (constitutional procurement, selection) [v0.3]
 ├── Feedback (FreedomHealth, triggers) [v0.1]
-└── CLI (user interface) [v0.1+v0.2]
+└── CLI (user interface) [v0.1+v0.2+v0.3]
 
 Anti-Tyranny Safeguards
 ├── Delegation TTL (max 365 days)
 ├── Concentration metrics (Gini warnings)
 ├── Checkpoint enforcement (mandatory review)
-├── Privacy-by-default (aggregate transparency)
+├── Privacy-by-default (aggregate transparency, PII redaction) [v1.0]
 ├── Budget flex classes (graduated constraints) [v0.2]
 ├── Zero-sum balancing (prevent budget growth) [v0.2]
-└── Multi-gate validation (defense in depth) [v0.2]
+├── Multi-gate validation (defense in depth) [v0.2]
+├── Algorithmic selection (no discretion, no favoritism) [v0.3]
+├── Supplier rotation (anti-monopolization) [v0.3]
+├── Cryptographic randomness (auditable fairness) [v0.3+v1.0]
+└── Security hardening (container isolation, rate limiting, path validation) [v1.0]
 ```
 
 ## Testing
@@ -249,6 +290,7 @@ pytest tests/test_kernel/test_event_store.py -v
   - `city_pilot.py` - Law lifecycle and delegation example
   - `replay_demo.py` - Event sourcing demonstration
   - `budget_example.py` - Budget module comprehensive examples (5 scenarios)
+  - `procurement_example.py` - Resource module constitutional selection (rotation, random, hybrid)
 
 ## Contributing
 

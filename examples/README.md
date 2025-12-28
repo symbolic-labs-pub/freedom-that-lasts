@@ -6,7 +6,7 @@ This directory contains working examples demonstrating Freedom That Lasts govern
 
 ### 1. City Pilot (`city_pilot.py`)
 
-**Realistic governance scenario**: Budapest health department implementing a primary care pilot program
+**Realistic governance scenario**: Albuquerque health department implementing a primary care pilot program
 
 **Demonstrates**:
 - Workspace hierarchy creation
@@ -59,6 +59,60 @@ python examples/replay_demo.py
 
 **Duration**: ~5 seconds
 
+### 3. Budget Example (`budget_example.py`)
+
+**Budget module demonstration**: Law-scoped budgets with multi-gate enforcement (v0.2)
+
+**Demonstrates**:
+- Budget creation with flex classes (CRITICAL/IMPORTANT/ASPIRATIONAL)
+- Multi-gate enforcement (step-size, balance, authority, limits)
+- Zero-sum allocation adjustments
+- Expenditure approval and tracking
+- Budget triggers (balance violations, overspending)
+- Complete audit trail for financial transparency
+
+**Run**:
+```bash
+python examples/budget_example.py
+```
+
+**Expected output**:
+- 5 comprehensive budget scenarios
+- Flex step-size enforcement (5%/15%/50% limits)
+- Zero-sum constraint validation
+- Expenditure tracking
+- Trigger detection
+- Budget health monitoring
+
+**Duration**: ~15 seconds
+
+### 4. Procurement Example (`procurement_example.py`)
+
+**Resource module demonstration**: Constitutional supplier selection mechanisms (v0.3)
+
+**Demonstrates**:
+- Algorithmic supplier selection (rotation, random, hybrid)
+- Feasibility constraints (capacity, certification, experience, reputation)
+- Deterministic seed-based randomness (SHA-256)
+- Supplier concentration monitoring (Gini coefficient)
+- Complete procurement audit trail
+- Anti-capture safeguards
+
+**Run**:
+```bash
+python examples/procurement_example.py
+```
+
+**Expected output**:
+- Rotation selection (load balancing)
+- Random selection (fairness with reproducibility)
+- Hybrid selection (rotation + random)
+- Feasibility filtering
+- Gini coefficient calculation
+- Supplier share tracking
+
+**Duration**: ~10 seconds
+
 ## Key Concepts Illustrated
 
 ### Event Sourcing
@@ -68,11 +122,13 @@ Both examples demonstrate that **events are the source of truth**:
 - Projections are materialized views (can be rebuilt)
 
 ### Anti-Tyranny Safeguards
-`city_pilot.py` shows how safeguards are automatic:
-- Delegation concentration detected via Gini coefficient
-- Law checkpoints enforced by tick loop
-- TTL limits prevent permanent authority
-- Health scorecard surfaces risk
+Multiple examples show how safeguards are automatic:
+- **Delegation**: Concentration detected via Gini coefficient (`city_pilot.py`)
+- **Laws**: Checkpoints enforced by tick loop (`city_pilot.py`)
+- **Budget**: Multi-gate enforcement prevents manipulation (`budget_example.py`)
+- **Procurement**: Algorithmic selection prevents favoritism (`procurement_example.py`)
+- **TTL**: Limits prevent permanent authority (all examples)
+- **Health**: Scorecard surfaces risk (all examples)
 
 ### Determinism
 `replay_demo.py` proves:
@@ -80,12 +136,30 @@ Both examples demonstrate that **events are the source of truth**:
 - Projections can be dropped and rebuilt
 - Perfect auditability (no state hidden)
 
+### Multi-Gate Enforcement
+`budget_example.py` demonstrates defense in depth:
+- **Gate 1**: Flex step-size limits (5%/15%/50%)
+- **Gate 2**: Zero-sum balance constraint
+- **Gate 3**: Delegation authority validation
+- **Gate 4**: No overspending constraint
+- **Result**: 4 independent checks prevent budget manipulation
+
+### Constitutional Procurement
+`procurement_example.py` shows algorithmic fairness:
+- **Rotation**: Load-balancing prevents monopolies
+- **Random**: Cryptographic seed-based selection
+- **Hybrid**: Rotation among low-loaded, then random
+- **Feasibility**: Hard pass/fail gates (no ranking)
+- **Transparency**: Full audit trail with reproducibility
+
 ## Running All Examples
 
 ```bash
 # Run from project root
-python examples/city_pilot.py
-python examples/replay_demo.py
+python examples/city_pilot.py        # Law & delegation (v0.1)
+python examples/replay_demo.py       # Event sourcing (v0.1)
+python examples/budget_example.py    # Budget module (v0.2)
+python examples/procurement_example.py  # Resources module (v0.3)
 ```
 
 ## Using as Templates

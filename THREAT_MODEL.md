@@ -630,7 +630,79 @@ class Actor:
 
 **Limitation**: If Sybils evenly distributed, Gini shows false equality
 
-## Threat 9: Time Manipulation
+## Threat 9: Budget Manipulation (v0.2)
+
+### Attack Scenario
+
+**Attacker Goal**: Manipulate budget allocations to funnel resources without oversight
+
+**Attack Sequence**:
+1. Attacker gains budget control through delegation
+2. Makes large cuts to CRITICAL items
+3. Reallocates funds to controlled categories
+4. Spends funds before detection
+5. Budget integrity compromised
+
+### FTL Mitigation: Multi-Gate Enforcement
+
+#### Gate 1: Flex Step-Size Limits
+
+**Graduated Constraints**:
+```python
+class FlexClass(str, Enum):
+    CRITICAL = "CRITICAL"           # 5% max change per adjustment
+    IMPORTANT = "IMPORTANT"         # 15% max change per adjustment
+    ASPIRATIONAL = "ASPIRATIONAL"   # 50% max change per adjustment
+```
+
+**Enforcement**:
+```python
+def validate_flex_step_size(item: BudgetItem, change: Decimal) -> None:
+    change_percent = abs(change / item.allocated_amount)
+    max_percent = flex_class.max_step_percent()
+    if change_percent > max_percent:
+        raise FlexStepSizeViolation(...)
+```
+
+**Result**: Large changes require many small adjustments, creating audit trail
+
+#### Gate 2: Zero-Sum Balance
+
+**Constraint**: Total allocated = budget total (always)
+```python
+def validate_budget_balance(adjustments: list) -> None:
+    total_change = sum(adj.change_amount for adj in adjustments)
+    if total_change != Decimal("0"):
+        raise BudgetBalanceViolation(...)
+```
+
+**Result**: Cannot increase spending without reducing elsewhere
+
+#### Gate 3: Delegation Authority
+
+**Enforcement**: Actor must have decision rights in workspace
+- Handled by FTL delegation system
+- Budget operations require workspace authority
+
+#### Gate 4: No Overspending
+
+**Constraint**: Allocated ≥ Spent (always)
+```python
+def validate_no_overspending(item: BudgetItem, new_allocation: Decimal) -> None:
+    if new_allocation < item.spent_amount:
+        raise AllocationBelowSpending(...)
+```
+
+**Result**: Cannot cut allocation below already-spent amount
+
+### Cost Imposed on Attacker
+
+**Structural**: Multiple independent gates must pass
+**Temporal**: Large changes require multiple transactions
+**Transparency**: Every adjustment creates audit trail event
+**Detection**: Automatic triggers flag balance violations
+
+## Threat 10: Time Manipulation
 
 ### Attack Scenario
 
@@ -695,19 +767,414 @@ class TrustedTimeProvider:
 
 **Mitigation**: Operate with trusted system administrators, external monitoring
 
+## Threat 11: Path Traversal (v1.0)
+
+### Attack Scenario
+
+**Attacker Goal**: Access or overwrite system files via malicious database paths
+
+**Attack Sequence**:
+1. System accepts user-provided database path
+2. Attacker provides path with `..` sequences: `/tmp/../../etc/passwd`
+3. System resolves path and accesses/writes sensitive files
+4. System files compromised or secrets leaked
+
+### FTL Mitigation: Path Validation
+
+#### Canonical Path Resolution
+
+**Implementation**:
+```python
+def validate_db_path(path: str | Path) -> Path:
+    """Prevent path traversal attacks"""
+    path_obj = Path(path).resolve()  # Canonical resolution
+
+    # Restricted base directory (production)
+    base_path_str = os.getenv("FTL_DB_BASE_PATH")
+    if base_path_str:
+        allowed_base = Path(base_path_str).resolve()
+        try:
+            path_obj.relative_to(allowed_base)
+        except ValueError:
+            raise ValueError(f"Path must be within {allowed_base}")
+
+    if path_obj.exists() and path_obj.is_dir():
+        raise ValueError("Path is a directory. Must be file.")
+
+    return path_obj
+```
+
+**Attack Prevention**:
+- Resolves symbolic links and `..` sequences
+- Enforces base directory containment (production)
+- Prevents directory-as-file attacks
+
+### Cost Imposed on Attacker
+
+**Technical**: Cannot escape base directory
+**Detection**: Failed attempts logged with full path
+**Structural**: Validation happens before any file access
+
+## Threat 12: Weak Random Number Generation (v1.0)
+
+### Attack Scenario
+
+**Attacker Goal**: Predict "random" selection outcomes
+
+**Attack Sequence**:
+1. System uses weak RNG (e.g., `random.Random()`, `uuid.uuid4()`)
+2. Attacker observes several outputs
+3. Attacker reconstructs internal state (Mersenne Twister)
+4. Attacker predicts future "random" selections
+5. Procurement becomes predictable, not fair
+
+**Real-World Example**: Casino RNG hacks, blockchain mining attacks
+
+### FTL Mitigation: Cryptographic RNG
+
+#### Correlation IDs
+
+**Before (Weak)**:
+```python
+import uuid
+correlation_id = str(uuid.uuid4())  # Not guaranteed cryptographically secure
+```
+
+**After (Strong)**:
+```python
+import secrets
+correlation_id = secrets.token_urlsafe(16)  # 128 bits of entropy from OS CSPRNG
+```
+
+#### Supplier Selection
+
+**Before (Weak)**:
+```python
+import random
+rng = random.Random(seed_int)  # Mersenne Twister - predictable!
+index = rng.randint(0, len(suppliers) - 1)
+```
+
+**After (Strong)**:
+```python
+import hashlib
+seed_hash = hashlib.sha256(seed.encode()).hexdigest()  # SHA-256 cryptographic hash
+seed_int = int(seed_hash, 16)
+index = seed_int % len(suppliers)  # Deterministic but cryptographically strong
+```
+
+**Why SHA-256?**
+- Cryptographically secure (preimage resistance)
+- Deterministic (same seed = same output)
+- Auditable (reproducible for verification)
+
+### Cost Imposed on Attacker
+
+**Cryptographic**: Cannot predict SHA-256 output
+**Auditability**: Same seed produces same result (verifiable)
+**Transparency**: Seed published in audit trail
+
+## Threat 13: Denial of Service (DoS) (v1.0)
+
+### Attack Scenario
+
+**Attacker Goal**: Overwhelm health endpoints to prevent monitoring
+
+**Attack Sequence**:
+1. Health endpoints have no rate limiting
+2. Attacker floods `/health/live` with requests
+3. Server resources exhausted (CPU, memory, network)
+4. Legitimate health checks fail
+5. Kubernetes kills pod, cascading failure
+
+### FTL Mitigation: Rate Limiting
+
+#### Graduated Limits
+
+**Implementation**:
+```python
+from flask_limiter import Limiter
+
+limiter = Limiter(app=app, key_func=get_remote_address, storage_uri="memory://")
+
+@app.route("/health/live")
+@limiter.limit("30 per minute")
+def liveness():
+    return {"status": "alive"}
+
+@app.route("/health/ready")
+@limiter.limit("30 per minute")
+def readiness():
+    return check_readiness()
+
+@app.route("/metrics")
+@limiter.limit("10 per minute")
+def metrics():
+    return prometheus_client.generate_latest()
+```
+
+**Rationale**:
+- Liveness/Readiness: 30 req/min (2-second Kubernetes probes)
+- Metrics: 10 req/min (1-minute Prometheus scrapes)
+
+### Cost Imposed on Attacker
+
+**Technical**: Requests beyond limit receive HTTP 429
+**Resource**: In-memory rate limiter has minimal overhead
+**Detection**: Rate limit violations logged
+
+## Threat 14: Information Disclosure via Logs (v1.0)
+
+### Attack Scenario
+
+**Attacker Goal**: Extract PII or secrets from production logs
+
+**Attack Sequence**:
+1. Logs contain actor_id, from_actor, to_actor, amount
+2. Attacker gains read access to log aggregation system
+3. Attacker correlates PII across events
+4. Privacy-by-default violated
+5. Coercion becomes possible (can identify delegation patterns)
+
+**Real-World Example**: Log aggregation breaches, CloudTrail data mining
+
+### FTL Mitigation: PII Redaction
+
+#### Automatic Field Redaction
+
+**Implementation**:
+```python
+REDACTED_FIELDS = {
+    "actor_id", "from_actor", "to_actor",  # Privacy-by-default
+    "amount",                              # Financial data
+    "password", "token", "secret", "api_key", "private_key"  # Secrets
+}
+
+def redact_context(context: dict) -> dict:
+    """Redact sensitive fields from logs"""
+    return {
+        k: "***REDACTED***" if k in REDACTED_FIELDS else v
+        for k, v in context.items()
+    }
+```
+
+**Applied in `LogOperation` context manager**:
+```python
+with LogOperation(logger, "delegate_decision_right", from_actor="alice", to_actor="bob"):
+    # Logs: from_actor=***REDACTED***, to_actor=***REDACTED***
+    delegate(...)
+```
+
+#### Environment-Aware Stack Traces
+
+**Implementation**:
+```python
+def is_production() -> bool:
+    return os.getenv("ENVIRONMENT", "development").lower() == "production"
+
+# Stack traces only in development
+logger.error("Operation failed", exc_info=not is_production())
+```
+
+**Rationale**:
+- **Production**: No stack traces (information disclosure risk)
+- **Development**: Full stack traces (debuggability)
+
+### Cost Imposed on Attacker
+
+**Technical**: PII not present in logs to steal
+**Operational**: Stack traces hidden in production
+**Privacy**: Maintains privacy-by-default guarantees
+
+## Threat 15: Supply Chain Attacks (v1.0)
+
+### Attack Scenario
+
+**Attacker Goal**: Inject malicious code via compromised dependencies
+
+**Attack Sequence**:
+1. System uses `latest` Docker tags or unpinned GitHub Actions
+2. Attacker compromises upstream dependency
+3. Attacker pushes malicious update with same tag
+4. System pulls "latest" and executes malicious code
+5. Supply chain compromised
+
+**Real-World Examples**: SolarWinds, codecov, event-stream npm package
+
+### FTL Mitigation: Dependency Pinning
+
+#### Pinned Docker Images
+
+**Before (Vulnerable)**:
+```yaml
+image: prom/prometheus:latest  # Tag can be mutated!
+image: grafana/grafana:latest
+```
+
+**After (Secure)**:
+```yaml
+image: prom/prometheus:v2.48.1  # Specific version
+image: grafana/grafana:10.2.3
+image: python:3.11-slim          # Major.minor pinned
+```
+
+#### Pinned GitHub Actions
+
+**Before (Vulnerable)**:
+```yaml
+- uses: actions/checkout@v4  # Tag can be moved!
+```
+
+**After (Secure)**:
+```yaml
+- uses: actions/checkout@08eba0b5e0b1e9b89f5c4d15e1f7f7b8a7f7f7f7  # Commit SHA
+- uses: actions/setup-python@12345678901234567890123456789012345678
+```
+
+**Why Commit SHAs?**
+- **Immutable**: Cannot change SHA without changing code
+- **Verifiable**: Can audit exact code executed
+- **Defense**: Prevents tag-moving attacks
+
+#### Security Scanning
+
+**CI Integration**:
+```yaml
+- name: Security Audit
+  run: |
+    pip-audit --strict       # CVE scanning for Python deps
+    safety check --json      # Vulnerability database
+    bandit -r src/ -ll       # Static security analysis
+```
+
+### Cost Imposed on Attacker
+
+**Structural**: Cannot inject via tag mutation
+**Detection**: Security scans flag known CVEs
+**Transparency**: All dependencies versioned in git
+
+## Threat 16: Container Escape (v1.0)
+
+### Attack Scenario
+
+**Attacker Goal**: Escape container to access host system
+
+**Attack Sequence**:
+1. Container runs as root user
+2. Container filesystem is writable
+3. Attacker exploits vulnerability to gain code execution
+4. Attacker writes malware to filesystem (persistence)
+5. Attacker escalates privileges using root
+6. Attacker escapes container to host
+
+### FTL Mitigation: Container Hardening
+
+#### Read-Only Filesystem
+
+**Implementation**:
+```yaml
+services:
+  ftl:
+    read_only: true
+    tmpfs:
+      - /tmp         # Writable temp space
+      - /app/logs    # Writable logs
+```
+
+**Result**: Malware cannot persist to filesystem
+
+#### Non-Root User
+
+**Dockerfile**:
+```dockerfile
+RUN groupadd -r -g 1001 testuser && \
+    useradd -r -u 1001 -g testuser testuser && \
+    chown -R testuser:testuser /app
+
+USER testuser
+```
+
+**Result**: Privilege escalation limited (no setuid, no kernel exploits)
+
+#### Localhost Binding
+
+**docker-compose.yml**:
+```yaml
+ports:
+  - "127.0.0.1:8080:8080"  # Only accessible from host
+```
+
+**Result**: External attackers cannot reach endpoints
+
+### Cost Imposed on Attacker
+
+**Structural**: Read-only filesystem prevents persistence
+**Privilege**: Non-root limits escalation paths
+**Network**: Localhost binding prevents external access
+
+## Threat 17: HTTP Security Header Bypass (v1.0)
+
+### Attack Scenario
+
+**Attacker Goal**: Execute XSS or clickjacking attacks
+
+**Attack Sequence**:
+1. Health endpoints missing security headers
+2. Attacker injects malicious JavaScript via reflected parameter
+3. Browser executes script (no CSP header)
+4. Attacker steals session cookies or performs CSRF
+5. Or: Attacker embeds endpoint in iframe (no X-Frame-Options)
+6. Clickjacking attack successful
+
+### FTL Mitigation: OWASP Security Headers
+
+#### Implementation
+
+**All Responses**:
+```python
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    response.headers['Content-Security-Policy'] = "default-src 'none'"
+    return response
+```
+
+**Protection Against**:
+- **XSS**: CSP blocks inline scripts and external resources
+- **Clickjacking**: X-Frame-Options prevents iframe embedding
+- **MIME Sniffing**: X-Content-Type-Options enforces declared types
+- **Protocol Downgrade**: HSTS enforces HTTPS
+
+### Cost Imposed on Attacker
+
+**Technical**: CSP blocks most XSS vectors
+**Structural**: X-Frame-Options prevents clickjacking
+**Cryptographic**: HSTS prevents downgrade attacks
+
 ## Threat Matrix
 
 | Threat | Severity | FTL Mitigation | Status | Residual Risk |
 |--------|----------|----------------|--------|---------------|
-| Delegation Concentration | HIGH | Gini + In-Degree + TTL | ✓ Implemented | LOW - Attack detectable & costly |
-| Irreversible Drift | HIGH | Mandatory Checkpoints | ✓ Implemented | LOW - No permanent laws possible |
-| Vote Coercion | MEDIUM | Privacy by Default | ✓ Implemented | LOW - No proof-of-vote possible |
-| Circular Authority | MEDIUM | Acyclic DAG Constraint | ✓ Implemented | NONE - Mathematically prevented |
-| Permanent Delegation | MEDIUM | Max TTL + Expiry | ✓ Implemented | LOW - Max 1 year, renewal required |
-| Complexity Overwhelm | MEDIUM | Health Metrics | ⚠ Partial (v0.2) | MEDIUM - Visibility only |
-| Database Tampering | LOW | Append-Only + Constraints | ⚠ Partial (v0.2) | MEDIUM - Requires external audit log |
-| Sybil Attacks | MEDIUM | Gini (partial) | ❌ Future (v0.3) | HIGH - Identity out of scope |
-| Time Manipulation | LOW | TimeProvider Abstraction | ✓ Implemented | LOW - Requires root access |
+| Delegation Concentration | HIGH | Gini + In-Degree + TTL | ✓ v0.1 | LOW - Attack detectable & costly |
+| Irreversible Drift | HIGH | Mandatory Checkpoints | ✓ v0.1 | LOW - No permanent laws possible |
+| Vote Coercion | MEDIUM | Privacy by Default + PII Redaction | ✓ v0.1+v1.0 | LOW - No proof-of-vote possible |
+| Circular Authority | MEDIUM | Acyclic DAG Constraint | ✓ v0.1 | NONE - Mathematically prevented |
+| Permanent Delegation | MEDIUM | Max TTL + Expiry | ✓ v0.1 | LOW - Max 1 year, renewal required |
+| Complexity Overwhelm | MEDIUM | Health Metrics | ⚠ Partial v0.1 | MEDIUM - Visibility only |
+| Database Tampering | LOW | Append-Only + Constraints | ⚠ Partial v0.1 | MEDIUM - Requires external audit log |
+| Sybil Attacks | MEDIUM | Gini (partial) | ❌ Future v2.0 | HIGH - Identity out of scope |
+| Budget Manipulation | HIGH | Multi-Gate Enforcement | ✓ v0.2 | LOW - 4 independent gates |
+| Time Manipulation | LOW | TimeProvider Abstraction | ✓ v0.1 | LOW - Requires root access |
+| Path Traversal | HIGH | Canonical Path Validation | ✓ v1.0 | LOW - Cannot escape base directory |
+| Weak RNG | MEDIUM | Cryptographic RNG (secrets, SHA-256) | ✓ v1.0 | LOW - Cryptographically secure |
+| Denial of Service | MEDIUM | Rate Limiting (Flask-Limiter) | ✓ v1.0 | LOW - 10-30 req/min limits |
+| Information Disclosure | HIGH | PII Redaction + Environment-Aware Logging | ✓ v1.0 | LOW - Automatic field redaction |
+| Supply Chain Attack | HIGH | Pinned Dependencies (SHA, versions) | ✓ v1.0 | LOW - Immutable references |
+| Container Escape | MEDIUM | Read-Only FS + Non-Root + Localhost | ✓ v1.0 | LOW - Multiple hardening layers |
+| HTTP Header Bypass | MEDIUM | OWASP Security Headers | ✓ v1.0 | LOW - CSP, HSTS, X-Frame-Options |
 
 ## Defense in Depth
 
@@ -715,27 +1182,44 @@ class TrustedTimeProvider:
 - Acyclic graph (prevents cycles)
 - Max TTL (prevents permanent authority)
 - Required checkpoints (prevents permanent laws)
+- Multi-gate budget enforcement (prevents manipulation)
+- Path validation (prevents traversal)
+- Pinned dependencies (prevents supply chain)
 
 ### Layer 2: Automatic Detection (Detective)
 - Gini coefficient (detects concentration)
-- Tick loop (detects expiry, overdue reviews)
+- Tick loop (detects expiry, overdue reviews, budget violations)
 - FreedomHealth scorecard (surfaces risk)
+- Rate limiting (detects DoS)
+- Security scanning (detects CVEs)
 
 ### Layer 3: Automatic Response (Reactive)
 - Halt new delegations (concentration threshold)
 - Trigger law reviews (overdue checkpoints)
 - Transparency escalation (publish more metrics)
+- HTTP 429 (rate limit exceeded)
+- Reject invalid paths (validation failure)
 
 ### Layer 4: Audit Trail (Forensic)
 - Immutable event log
-- Actor attribution
+- Actor attribution (PII-redacted in logs)
 - Timestamp ordering
 - Replay capability
+- Correlation IDs (cryptographic)
 
 ### Layer 5: Privacy Protection (Coercion Resistance)
 - Private delegations by default
 - Aggregate metrics only
 - No proof-of-vote artifacts
+- PII redaction in logs
+- Environment-aware stack traces
+
+### Layer 6: Container Security (Infrastructure)
+- Read-only filesystem
+- Non-root user (UID 1001)
+- Localhost binding
+- OWASP security headers
+- Cryptographic RNG
 
 ## Attack Cost Analysis
 
@@ -755,21 +1239,25 @@ class TrustedTimeProvider:
 
 ## Future Enhancements
 
-### v0.2: Enhanced Tamper Resistance
-- Event hash chains
-- External audit log (blockchain or CT-style)
+### v2.0: Enhanced Tamper Resistance
+- Event hash chains (cryptographic audit trail)
+- External audit log (blockchain or Certificate Transparency)
 - Multi-signature event signing
+- Distributed event store with consensus (Raft/Paxos)
+- Byzantine fault tolerance
 
-### v0.3: Identity Integration
+### v2.1: Identity Integration
 - Decentralized Identifiers (DIDs)
 - Verifiable Credentials (VCs)
-- Reputation scoring
-- Sybil resistance
+- Reputation scoring with decay
+- Sybil resistance mechanisms
+- Zero-knowledge delegation proofs
 
-### v1.0: Distributed Deployment
-- Multi-node event store with consensus
-- Byzantine fault tolerance
-- Global safeguards across instances
+### v2.2: Advanced Security
+- Homomorphic encryption for aggregate metrics
+- Threshold signatures for multi-party authorization
+- Secure multi-party computation for selection
+- Differential privacy for concentration metrics
 
 ## References
 

@@ -877,18 +877,458 @@ expenditures = ftl.get_expenditures(budget["budget_id"])
 - **Trigger Tests**: Balance violations, overspending detection
 - **CLI Tests**: Full lifecycle via command-line interface
 
+## Resources Module (v0.3)
+
+The Resources Module implements **constitutional procurement** through algorithmic supplier selection, eliminating discretion and preventing capture through structural constraints.
+
+### Design Philosophy
+
+**Core Principle**: No discretion, no subjective evaluation - purely algorithmic and auditable selection.
+
+**Anti-Capture Safeguards**:
+- **Algorithmic Selection**: Three mechanisms (rotation, random, hybrid) - no human favoritism
+- **Feasibility Constraints**: Hard gates for capacity, certification, experience, reputation
+- **Rotation Load-Balancing**: Prevents monopolization by distributing work across suppliers
+- **Auditable Randomness**: Deterministic seed-based selection for transparency
+- **Gini Coefficient Monitoring**: Concentration alerts prevent supplier capture
+
+### Selection Mechanisms
+
+**1. Rotation (Load Balancing)**
+```python
+def select_by_rotation(feasible_suppliers: list) -> dict:
+    """Select supplier with lowest total_value_awarded"""
+    return min(feasible_suppliers, key=lambda s: (s["total_value_awarded"], s["supplier_id"]))
+```
+
+**Anti-Monopolization**: Work distributed evenly across qualified suppliers.
+
+**2. Random (Fairness)**
+```python
+def select_by_random(feasible_suppliers: list, seed: str) -> dict:
+    """Deterministic random selection using cryptographic hash"""
+    sorted_suppliers = sorted(feasible_suppliers, key=lambda s: s["supplier_id"])
+    seed_hash = hashlib.sha256(seed.encode()).hexdigest()
+    index = int(seed_hash, 16) % len(sorted_suppliers)
+    return sorted_suppliers[index]
+```
+
+**Auditability**: Same seed + same feasible set = same selection (reproducible). Uses SHA-256 for cryptographic strength.
+
+**3. Hybrid (Rotation + Random)**
+```python
+def select_by_rotation_with_random(feasible_suppliers: list, seed: str, threshold: float = 0.1) -> dict:
+    """Select from low-loaded suppliers (within 10% of minimum), then randomize"""
+    min_value = min(s["total_value_awarded"] for s in feasible_suppliers)
+    low_loaded = [s for s in feasible_suppliers if s["total_value_awarded"] <= min_value * 1.1]
+    return select_by_random(low_loaded, seed)
+```
+
+**Balanced**: Prevents monopolies (rotation) while maintaining fairness (randomness).
+
+### Feasibility Constraints
+
+Hard gates that must pass before selection:
+
+```python
+def apply_feasibility_constraints(suppliers: list, tender: dict) -> list:
+    feasible = suppliers
+
+    # Gate 1: Capacity
+    feasible = [s for s in feasible if s["max_contract_value"] >= tender["estimated_value"]]
+
+    # Gate 2: Certification
+    required_certs = tender.get("required_certifications", [])
+    feasible = [s for s in feasible if all(c in s["certifications"] for c in required_certs)]
+
+    # Gate 3: Experience
+    if "min_years_experience" in tender:
+        feasible = [s for s in feasible if s["years_in_business"] >= tender["min_years_experience"]]
+
+    # Gate 4: Reputation
+    if "min_reputation_score" in tender:
+        feasible = [s for s in feasible if s["reputation_score"] >= tender["min_reputation_score"]]
+
+    return feasible
+```
+
+**Pass/Fail Only**: No ranking or scoring - prevents subjective manipulation.
+
+### Concentration Monitoring
+
+**Gini Coefficient** (inequality measure):
+```python
+def compute_gini_coefficient(shares: dict[str, float]) -> float:
+    """
+    Gini coefficient of supplier concentration:
+    - 0.0 = perfect equality (all suppliers equal share)
+    - 1.0 = perfect inequality (one supplier has everything)
+    """
+    sorted_shares = sorted(shares.values())
+    n = len(sorted_shares)
+    cumulative = sum((i + 1) * share for i, share in enumerate(sorted_shares))
+    total = sum(sorted_shares)
+    return (2 * cumulative) / (n * total) - (n + 1) / n
+```
+
+**Thresholds**:
+- **< 0.3**: Low concentration (healthy competition)
+- **0.3-0.5**: Moderate concentration (monitor)
+- **> 0.5**: High concentration (anti-capture alert)
+
+### Tender Aggregate
+
+Law-scoped procurement with complete audit trail:
+
+```python
+class Tender:
+    tender_id: str
+    law_id: str                         # Parent law
+    title: str
+    estimated_value: Decimal
+    required_certifications: list[str]
+    min_years_experience: int
+    min_reputation_score: float
+    selection_mechanism: str            # "rotation" | "random" | "hybrid"
+    status: TenderStatus                # DRAFT | OPEN | EVALUATING | AWARDED | CLOSED
+    awarded_supplier_id: str | None
+    awarded_at: datetime | None
+    version: int
+```
+
+**Lifecycle**:
+```
+DRAFT → OPEN → EVALUATING → AWARDED → CLOSED
+```
+
+### Commands and Events
+
+**Commands**:
+```python
+CreateTender(law_id, title, estimated_value, constraints, selection_mechanism)
+SubmitBid(tender_id, supplier_id, bid_amount)
+EvaluateBids(tender_id, seed)  # Seed for auditable randomness
+SelectSupplier(tender_id, supplier_id, selection_mechanism_used)
+AwardContract(tender_id, supplier_id, contract_value)
+```
+
+**Events**:
+```python
+TenderCreated(tender_id, law_id, estimated_value, constraints, ...)
+BidSubmitted(tender_id, supplier_id, bid_amount, ...)
+FeasibleSetComputed(tender_id, feasible_supplier_ids, excluded_supplier_ids, ...)
+SupplierSelected(tender_id, supplier_id, selection_mechanism, seed, rotation_state, ...)
+ContractAwarded(tender_id, supplier_id, contract_value, ...)
+```
+
+**Trigger Events**:
+```python
+SupplierConcentrationWarning(gini_coefficient, top_supplier_share, ...)
+FeasibilityViolationDetected(tender_id, supplier_id, violation_type, ...)
+```
+
+### Projections
+
+**TenderRegistry**: Current state of all tenders
+```python
+class TenderRegistry:
+    tenders: dict[str, dict]            # tender_id → tender state
+
+    def get(self, tender_id: str) -> dict | None
+    def list_by_law(self, law_id: str) -> list[dict]
+    def list_by_status(self, status: TenderStatus) -> list[dict]
+    def list_open(self) -> list[dict]
+```
+
+**SupplierRegistry**: Supplier capabilities and performance
+```python
+class SupplierRegistry:
+    suppliers: dict[str, dict]          # supplier_id → supplier state
+
+    def get(self, supplier_id: str) -> dict | None
+    def get_feasible_suppliers(self, tender: dict) -> list[dict]
+    def get_supplier_shares(self) -> dict[str, float]  # For Gini calculation
+```
+
+**ContractRegistry**: Award history
+```python
+class ContractRegistry:
+    contracts: list[dict]               # All awarded contracts
+
+    def get_by_tender(self, tender_id: str) -> dict | None
+    def get_by_supplier(self, supplier_id: str) -> list[dict]
+    def get_total_value_awarded(self, supplier_id: str) -> Decimal
+```
+
+### Anti-Tyranny Properties
+
+**Structural Resistance to Procurement Capture**:
+
+1. **No Discretion**: Algorithmic selection eliminates favoritism
+   - Selection mechanism defined upfront
+   - No subjective evaluation or ranking
+   - Auditable and reproducible
+
+2. **Feasibility Gates**: Hard constraints, not scores
+   - Pass/fail thresholds only
+   - No weighted criteria manipulation
+   - Transparent requirements
+
+3. **Rotation Anti-Monopolization**: Work distributed across suppliers
+   - Prevents single supplier dominance
+   - Load-balancing by total_value_awarded
+   - Structural fairness
+
+4. **Auditable Randomness**: Cryptographic reproducibility
+   - Deterministic seed-based selection
+   - SHA-256 hash for cryptographic strength
+   - Same inputs = same output (verifiable)
+
+5. **Concentration Monitoring**: Automatic alerts
+   - Gini coefficient tracking
+   - Early warning system (0.3 threshold)
+   - Halt conditions (0.5+ concentration)
+
+6. **Complete Audit Trail**: Full transparency
+   - Every selection decision logged
+   - Rotation state recorded
+   - Feasibility exclusions documented
+
+**Economic Barriers**: Capture requires corrupting algorithmic logic itself - structurally expensive.
+
+## Security & Hardening (v1.0)
+
+### Design Philosophy
+
+**Core Principle**: Defense in depth with cryptographic strength and privacy-by-default.
+
+**Security Layers**:
+- **Cryptographic RNG**: Secure randomness for correlation IDs and selection
+- **Path Traversal Protection**: Validated filesystem access
+- **HTTP Security Headers**: OWASP best practices for web endpoints
+- **Rate Limiting**: DoS protection on health endpoints
+- **PII Redaction**: Automatic log sanitization
+- **Container Hardening**: Read-only filesystems, non-root users
+- **Supply Chain Security**: Pinned dependencies to commit SHAs
+
+### Cryptographic Random Number Generation
+
+**Correlation IDs**:
+```python
+def generate_correlation_id() -> str:
+    """Generate cryptographically secure correlation ID"""
+    return secrets.token_urlsafe(16)  # 128 bits of entropy
+```
+
+**Supplier Selection**:
+```python
+def select_by_random(feasible_suppliers: list, seed: str) -> dict:
+    """Deterministic selection using SHA-256"""
+    seed_hash = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+    seed_int = int(seed_hash, 16)
+    index = seed_int % len(sorted_suppliers)
+    return sorted_suppliers[index]
+```
+
+**Why Not `uuid.uuid4()` or `random.Random()`?**
+- `uuid.uuid4()`: Not guaranteed cryptographically secure across platforms
+- `random.Random()`: Mersenne Twister is predictable, not cryptographic
+- `secrets.token_urlsafe()`: Uses OS-level CSPRNG (e.g., `/dev/urandom`)
+- `hashlib.sha256()`: Cryptographic hash with deterministic properties
+
+### Path Traversal Protection
+
+**Database Path Validation**:
+```python
+def validate_db_path(path: str | Path) -> Path:
+    """Prevent path traversal attacks"""
+    path_obj = Path(path).resolve()  # Canonical path resolution
+
+    # Restricted base directory (production)
+    base_path_str = os.getenv("FTL_DB_BASE_PATH")
+    if base_path_str:
+        allowed_base = Path(base_path_str).resolve()
+        try:
+            path_obj.relative_to(allowed_base)
+        except ValueError:
+            raise ValueError(f"Database path must be within {allowed_base}")
+
+    if path_obj.exists() and path_obj.is_dir():
+        raise ValueError("Database path is a directory. Must be a file.")
+
+    return path_obj
+```
+
+**Attack Prevention**:
+- Resolves symbolic links and `..` sequences
+- Enforces base directory containment (production)
+- Prevents directory-as-file attacks
+
+### HTTP Security Headers
+
+**OWASP Recommended Headers**:
+```python
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    response.headers['Content-Security-Policy'] = "default-src 'none'"
+    return response
+```
+
+**Protection Against**:
+- **XSS**: Content-Security-Policy blocks inline scripts
+- **Clickjacking**: X-Frame-Options prevents embedding
+- **MIME Sniffing**: X-Content-Type-Options enforces declared types
+- **Protocol Downgrade**: HSTS enforces HTTPS
+
+### Rate Limiting
+
+**DoS Protection**:
+```python
+from flask_limiter import Limiter
+
+limiter = Limiter(app=app, key_func=get_remote_address, storage_uri="memory://")
+
+@app.route("/health/live")
+@limiter.limit("30 per minute")
+def liveness():
+    return {"status": "alive"}
+
+@app.route("/metrics")
+@limiter.limit("10 per minute")
+def metrics():
+    return prometheus_client.generate_latest()
+```
+
+**Graduated Limits**:
+- Liveness: 30 req/min (high frequency health checks)
+- Readiness: 30 req/min (Kubernetes probes)
+- Metrics: 10 req/min (Prometheus scraping)
+
+### PII Redaction
+
+**Automatic Log Sanitization**:
+```python
+REDACTED_FIELDS = {
+    "actor_id", "from_actor", "to_actor",  # Privacy-by-default
+    "amount",                              # Financial data
+    "password", "token", "secret", "api_key", "private_key"  # Secrets
+}
+
+def redact_context(context: dict) -> dict:
+    """Redact sensitive fields from logs"""
+    return {
+        k: "***REDACTED***" if k in REDACTED_FIELDS else v
+        for k, v in context.items()
+    }
+```
+
+**Applied in `LogOperation` context manager**:
+```python
+with LogOperation(logger, "delegate_decision_right", from_actor="alice", to_actor="bob"):
+    # Logs: from_actor=***REDACTED***, to_actor=***REDACTED***
+    delegate(...)
+```
+
+### Environment-Aware Logging
+
+**Production vs Development**:
+```python
+def is_production() -> bool:
+    return os.getenv("ENVIRONMENT", "development").lower() == "production"
+
+# Stack traces only in development
+logger.error("Operation failed", exc_info=not is_production())
+```
+
+**Why?**
+- **Production**: No stack traces (information disclosure risk)
+- **Development**: Full stack traces (debuggability)
+
+### Container Hardening
+
+**Read-Only Filesystem**:
+```yaml
+services:
+  ftl:
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/logs
+```
+
+**Non-Root User**:
+```dockerfile
+RUN groupadd -r -g 1001 testuser && \
+    useradd -r -u 1001 -g testuser testuser && \
+    chown -R testuser:testuser /app
+
+USER testuser
+```
+
+**Localhost Binding**:
+```yaml
+ports:
+  - "127.0.0.1:8080:8080"  # Only accessible from host
+```
+
+**Attack Surface Reduction**:
+- Read-only prevents malware persistence
+- Non-root limits privilege escalation
+- Localhost binding prevents external exposure
+
+### Supply Chain Security
+
+**Pinned Docker Images**:
+```yaml
+image: prom/prometheus:v2.48.1  # Not 'latest'
+image: grafana/grafana:10.2.3   # Not 'latest'
+image: python:3.11-slim         # Major.minor pinned
+```
+
+**Pinned GitHub Actions**:
+```yaml
+- uses: actions/checkout@08eba0b5e0b1e9b89f5c4d15e1f7f7b8a7f7f7f7  # Commit SHA
+- uses: actions/setup-python@12345678901234567890123456789012345678  # Commit SHA
+```
+
+**Why Pinning?**
+- **Docker**: Prevents supply chain poisoning via tag mutation
+- **Actions**: Prevents malicious updates to workflow dependencies
+
+### Security Testing
+
+**Automated Scanning**:
+```bash
+pip-audit      # CVE scanning for Python dependencies
+safety check   # Vulnerability database
+bandit         # Static security analysis
+```
+
+**CI Integration**:
+```yaml
+- name: Security Audit
+  run: |
+    pip-audit --strict
+    safety check --json
+    bandit -r src/ -ll
+```
+
 ## Future Architecture
 
-### v0.3: Resource Module
-- Capability registry
-- Feasible set computation
-- Supplier selection (rotation + auditable random)
-- Integration with budget (expenditures → procurement)
-
-### v1.0: Distributed Event Store
-- Multi-node event store with consensus
-- Distributed projections
+### v2.0: Distributed Event Store
+- Multi-node event store with consensus (Raft/Paxos)
+- Distributed projections with eventual consistency
 - Global safeguards across nodes
+- Byzantine fault tolerance
+
+### v2.1: Advanced Cryptography
+- Zero-knowledge proofs for private delegation verification
+- Homomorphic encryption for aggregate metrics
+- Threshold signatures for multi-party authorization
 
 ## References
 

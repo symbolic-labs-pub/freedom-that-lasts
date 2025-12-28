@@ -24,7 +24,11 @@ import typer
 from typing_extensions import Annotated
 
 from freedom_that_lasts.ftl import FTL
+from freedom_that_lasts.kernel.logging import configure_logging
 from freedom_that_lasts.resource.models import SelectionMethod
+
+# Configure logging to stderr (avoids polluting stdout for JSON output)
+configure_logging(json_output=False, log_level="INFO")
 
 app = typer.Typer(
     name="ftl",
