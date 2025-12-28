@@ -120,9 +120,43 @@ ftl.approve_expenditure(
     amount=50000,
     purpose="Hire data analyst"
 )
-```
 
-## TODO: Show the resource module with examples here...
+# Register suppliers with evidence-based capabilities (v0.3)
+supplier = ftl.register_supplier(
+    name="SecureInfraCo",
+    supplier_type="company",
+    metadata={"contact": "ops@secureinfra.com"}
+)
+
+# Add capability with evidence (no self-certification)
+ftl.add_capability_claim(
+    supplier_id=supplier["supplier_id"],
+    capability_type="ISO27001",
+    evidence=["cert-12345", "audit-report-2024.pdf"],
+    capacity_metrics={"concurrent_projects": 5}
+)
+
+# Create tender with binary requirements
+tender = ftl.create_tender(
+    law_id=law["law_id"],
+    title="Security Infrastructure Upgrade",
+    requirements=[
+        {"type": "ISO27001", "min_capacity": 3}
+    ],
+    budget_allocated=Decimal("500000"),
+    selection_method="ROTATION"  # or RANDOM, HYBRID
+)
+
+# Open, evaluate, and select supplier constitutionally
+ftl.open_tender(tender["tender_id"])
+ftl.evaluate_tender(tender["tender_id"])  # Computes feasible set
+selected = ftl.select_supplier(tender["tender_id"])  # Deterministic selection
+
+# Award contract and track delivery
+ftl.award_tender(tender["tender_id"], contract_terms={"sla_days": 90})
+ftl.record_milestone(tender["tender_id"], milestone="Phase 1", evidence=["deploy-logs"])
+ftl.complete_tender(tender["tender_id"], quality_score=0.95)  # Updates reputation
+```
 
 ### Command-Line Interface
 
@@ -163,8 +197,31 @@ ftl budget adjust --id <id> --adjustments '[...]' --reason "Reallocate funds"
 # Expenditure tracking
 ftl expenditure approve --budget <id> --item <id> --amount 50000 --purpose "Hire analyst"
 ftl expenditure list --budget <id>
+
+# Supplier management (v0.3)
+ftl supplier register --name "SecureInfraCo" --type company
+ftl supplier add-capability --supplier-id <id> --capability ISO27001 \
+  --evidence '["cert-12345"]' --capacity '{"concurrent_projects":5}'
+ftl supplier list
+ftl supplier show --id <supplier_id>
+
+# Tender lifecycle (constitutional procurement)
+ftl tender create --law-id <id> --title "Security Upgrade" \
+  --requirements '[{"type":"ISO27001","min_capacity":3}]' \
+  --budget-allocated 500000 --selection-method ROTATION
+ftl tender open --id <tender_id> --deadline "2025-12-31T23:59:59"
+ftl tender evaluate --id <tender_id>  # Compute feasible set
+ftl tender select --id <tender_id>     # Algorithmic selection (no discretion)
+ftl tender award --id <tender_id>      # Award contract
+ftl tender list --status OPEN
+ftl tender show --id <tender_id>
+
+# Delivery tracking
+ftl delivery milestone --tender-id <id> --milestone "Phase 1" \
+  --evidence '["deploy-logs.txt"]'
+ftl delivery complete --tender-id <id> --quality-score 0.95
+ftl delivery list --tender <tender_id>
 ```
-## TODO: Show the resource module cli with examples here...
 
 ## Installation
 
@@ -179,8 +236,8 @@ pytest
 
 # Run examples
 python examples/city_pilot.py       # Law & delegation example
-python examples/budget_example.py   # Budget module examples
-# TODO: if not exists then write and reference resource examples here...
+python examples/budget_example.py   # Budget module examples (5 scenarios)
+python examples/resource_example.py # Resource module examples (5 scenarios)
 ```
 
 ## Current Status:
@@ -287,7 +344,7 @@ pytest tests/test_kernel/test_event_store.py -v
   - `city_pilot.py` - Law lifecycle and delegation example
   - `replay_demo.py` - Event sourcing demonstration
   - `budget_example.py` - Budget module comprehensive examples (5 scenarios)
-  - `procurement_example.py` - Resource module constitutional selection (rotation, random, hybrid)
+  - `resource_example.py` - Resource module procurement examples (5 scenarios: tender lifecycle, multi-gate selection, feasible set, concentration monitoring, delivery tracking)
 
 ## Contributing
 
