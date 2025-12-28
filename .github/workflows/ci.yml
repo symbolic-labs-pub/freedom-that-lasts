@@ -124,6 +124,11 @@ jobs:
     if: always() && github.ref == 'refs/heads/master'  # Always run on master, even if tests fail
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: master
+
       - name: Download coverage JSON
         uses: actions/download-artifact@v4
         with:
@@ -186,15 +191,13 @@ jobs:
           print(f"Generated coverage badge: {coverage_str} ({color})")
           EOF
 
-      - name: Deploy to gh-pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./badges
-          destination_dir: badges
-          commit_message: 'Update coverage badge [skip ci]'
-          user_name: 'github-actions[bot]'
-          user_email: 'github-actions[bot]@users.noreply.github.com'
+      - name: Commit and push badge to master
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add badges/coverage.svg
+          git diff --quiet && git diff --staged --quiet || git commit -m "Update coverage badge [skip ci]"
+          git push
 
   summary:
     name: Workflow Summary
