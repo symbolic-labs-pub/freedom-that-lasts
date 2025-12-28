@@ -20,7 +20,7 @@ Freedom That Lasts is a Python package implementing the governance concepts from
 - **Event Sourcing**: Append-only event log as source of truth
 - **Idempotency**: Same command = same result (deterministic replay)
 - **Revocable Delegation**: Authority with TTL and automatic expiry
-- **Time-Bound Laws**: Mandatory review checkpoints prevent drift
+- **Time-Bound Learning Laws**: Mandatory review checkpoints prevent drift
 - **Anti-Tyranny Safeguards**: Concentration metrics, automatic warnings/halts
 - **Privacy-by-Default**: Aggregate transparency without individual coercion
 - **FreedomHealth Scorecard**: Real-time risk monitoring (GREEN/YELLOW/RED)
@@ -41,7 +41,7 @@ Freedom That Lasts is a Python package implementing the governance concepts from
 - **Auditable Selection**: Deterministic seed-based randomness with cryptographic strength
 - **Reputation System**: Performance-based scoring with automatic threshold enforcement
 
-### Security & Infrastructure (v1.0)
+### Security & Infrastructure
 - **Cryptographic RNG**: Secure random generation for correlation IDs and selection mechanisms
 - **Path Traversal Protection**: Validated database paths with canonical resolution
 - **HTTP Security Headers**: CSP, HSTS, X-Frame-Options, XSS protection
@@ -129,6 +129,8 @@ ftl.approve_expenditure(
 )
 ```
 
+## TODO: Show the resource module with examples here...
+
 ### Command-Line Interface
 
 ```bash
@@ -169,6 +171,7 @@ ftl budget adjust --id <id> --adjustments '[...]' --reason "Reallocate funds"
 ftl expenditure approve --budget <id> --item <id> --amount 50000 --purpose "Hire analyst"
 ftl expenditure list --budget <id>
 ```
+## TODO: Show the resource module cli with examples here...
 
 ## Installation
 
@@ -183,10 +186,11 @@ pytest
 
 # Run examples
 python examples/city_pilot.py       # Law & delegation example
-python examples/budget_example.py   # Budget module examples (v0.2)
+python examples/budget_example.py   # Budget module examples
+# TODO: if not exists then write and reference resource examples here...
 ```
 
-## Current Status: v1.0 COMPLETE
+## Current Status:
 
 ### ✅ v0.1: Governance Kernel
 - **Kernel**: Event store (SQLite), projection store, IDs (UUIDv7), time abstraction, SafetyPolicy
@@ -249,24 +253,24 @@ Event Sourcing Foundation
 └── Triggers (automatic reflexes)
 
 Domain Modules
-├── Law (delegation, lifecycle, checkpoints) [v0.1]
-├── Budget (flex classes, multi-gate enforcement) [v0.2]
-├── Resources (constitutional procurement, selection) [v0.3]
-├── Feedback (FreedomHealth, triggers) [v0.1]
-└── CLI (user interface) [v0.1+v0.2+v0.3]
+├── Law (delegation, lifecycle, checkpoints)
+├── Budget (flex classes, multi-gate enforcement)
+├── Resources (constitutional procurement, selection)
+├── Feedback (FreedomHealth, triggers)
+└── CLI (user interface)
 
 Anti-Tyranny Safeguards
 ├── Delegation TTL (max 365 days)
 ├── Concentration metrics (Gini warnings)
 ├── Checkpoint enforcement (mandatory review)
-├── Privacy-by-default (aggregate transparency, PII redaction) [v1.0]
-├── Budget flex classes (graduated constraints) [v0.2]
-├── Zero-sum balancing (prevent budget growth) [v0.2]
-├── Multi-gate validation (defense in depth) [v0.2]
-├── Algorithmic selection (no discretion, no favoritism) [v0.3]
-├── Supplier rotation (anti-monopolization) [v0.3]
-├── Cryptographic randomness (auditable fairness) [v0.3+v1.0]
-└── Security hardening (container isolation, rate limiting, path validation) [v1.0]
+├── Privacy-by-default (aggregate transparency, PII redaction)
+├── Budget flex classes (graduated constraints)
+├── Zero-sum balancing (prevent budget growth)
+├── Multi-gate validation (defense in depth)
+├── Algorithmic selection (no discretion, no favoritism)
+├── Supplier rotation (anti-monopolization)
+├── Cryptographic randomness (auditable fairness)
+└── Security hardening (container isolation, rate limiting, path validation)
 ```
 
 ## Testing
@@ -294,7 +298,7 @@ pytest tests/test_kernel/test_event_store.py -v
 
 ## Contributing
 
-This is greenfield development - contributions welcome! See implementation plan for detailed tasks.
+This is an open development - contributions welcome! See implementation plan for detailed tasks.
 
 **Key Principles:**
 - Minimal but correct (small codebase expressing full theory)
