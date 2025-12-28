@@ -15,7 +15,7 @@ from typing import Callable
 
 from freedom_that_lasts.kernel.commands import Command
 from freedom_that_lasts.kernel.events import Event
-from freedom_that_lasts.kernel.logging import LogOperation, get_logger
+from freedom_that_lasts.kernel.logging import LogOperation, get_logger, is_production
 from freedom_that_lasts.kernel.metrics import commands_processed_total
 
 logger = get_logger(__name__)
@@ -140,12 +140,14 @@ class InProcessBus:
                     command_type=command.command_type,
                     status="failure",
                 ).inc()
+                # Only include stack traces in development (security: prevent info disclosure)
+                production = is_production()
                 logger.error(
                     "Command processing failed",
                     command_type=command.command_type,
                     command_id=command.command_id,
                     error=str(e),
-                    exc_info=True,
+                    exc_info=not production,  # Stack traces only in development
                 )
                 raise
 

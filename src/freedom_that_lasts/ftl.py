@@ -16,6 +16,7 @@ Example:
     >>> health = ftl.health()  # Get system health
 """
 
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -84,6 +85,58 @@ from freedom_that_lasts.resource.projections import (
 )
 
 
+def validate_db_path(path: str | Path) -> Path:
+    """
+    Validate database path to prevent path traversal attacks.
+
+    Fun fact: Path traversal attacks (like ../../etc/passwd) have been in the OWASP Top 10
+    since 2003. Still relevant in 2025 - classic never goes out of style!
+
+    Security checks:
+    1. Resolves path to absolute canonical form (eliminates .. and symlinks)
+    2. If FTL_DB_BASE_PATH env var set (production), ensures path is within that directory
+    3. Rejects directory paths (database must be a file)
+
+    Args:
+        path: Database path (relative or absolute)
+
+    Returns:
+        Validated absolute Path object
+
+    Raises:
+        ValueError: If path fails security validation
+    """
+    path_obj = Path(path)
+    resolved = path_obj.resolve()
+
+    # Check if there's a restricted base path (production mode)
+    base_path_str = os.getenv("FTL_DB_BASE_PATH")
+    if base_path_str:
+        allowed_base = Path(base_path_str).resolve()
+
+        # Ensure path is within allowed directory
+        try:
+            resolved.relative_to(allowed_base)
+        except ValueError:
+            raise ValueError(
+                f"Database path '{resolved}' must be within allowed directory '{allowed_base}'. "
+                f"Set FTL_DB_BASE_PATH environment variable to change allowed directory."
+            )
+
+    # Ensure it's not a directory (must be a file)
+    if resolved.exists() and resolved.is_dir():
+        raise ValueError(f"Database path '{resolved}' is a directory. Must be a file path.")
+
+    # Ensure parent directory exists or can be created
+    parent_dir = resolved.parent
+    if not parent_dir.exists():
+        raise ValueError(
+            f"Parent directory '{parent_dir}' does not exist. Create it first."
+        )
+
+    return resolved
+
+
 class FTL:
     """
     Freedom That Lasts main façade
@@ -110,9 +163,12 @@ class FTL:
             safety_policy: Safety policy (uses defaults if None)
             time_provider: Time provider (uses real time if None)
         """
-        logger.info("Initializing FTL system", sqlite_path=str(sqlite_path))
+        # Validate database path for security (prevent path traversal)
+        validated_path = validate_db_path(sqlite_path)
 
-        self.sqlite_path = Path(sqlite_path)
+        logger.info("Initializing FTL system", sqlite_path=str(validated_path))
+
+        self.sqlite_path = validated_path
         self.safety_policy = safety_policy or SafetyPolicy()
         self.time_provider = time_provider or RealTimeProvider()
 

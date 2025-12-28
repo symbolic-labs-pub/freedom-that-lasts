@@ -10,7 +10,6 @@ randomness. We're bringing that wisdom forward with cryptographic verifiability!
 """
 
 import hashlib
-import random
 from decimal import Decimal
 from typing import Any
 
@@ -94,14 +93,14 @@ def select_by_random(
     # Sort by supplier_id for deterministic ordering
     sorted_suppliers = sorted(feasible_suppliers, key=lambda s: s["supplier_id"])
 
-    # Use seed to generate deterministic random index
-    # Hash seed to get numeric value
+    # Use seed to generate deterministic index via cryptographic hash
+    # Hash seed to get numeric value (SHA-256 provides cryptographic strength)
     seed_hash = hashlib.sha256(seed.encode("utf-8")).hexdigest()
     seed_int = int(seed_hash, 16)
 
-    # Use seeded random to select
-    rng = random.Random(seed_int)
-    index = rng.randint(0, len(sorted_suppliers) - 1)
+    # Use deterministic modulo selection (cryptographically secure and reproducible)
+    # Fun fact: This mirrors ancient Athenian lottery selection, but with modern crypto!
+    index = seed_int % len(sorted_suppliers)
 
     return sorted_suppliers[index]
 

@@ -21,6 +21,14 @@ RUN pip install --no-cache-dir -e ".[dev]"
 # Create directories for coverage and test outputs
 RUN mkdir -p /app/coverage /app/test-results
 
+# Security: Create non-root user to run tests
+# Fun fact: Running as non-root follows the principle of least privilege - a security best practice since the 1970s!
+RUN groupadd -r -g 1001 testuser && \
+    useradd -r -u 1001 -g testuser testuser && \
+    chown -R testuser:testuser /app
+
+USER testuser
+
 # Run tests with coverage by default
 # Coverage outputs: XML (for tools), JSON (for badge), HTML (for humans), term-missing (for CI logs)
 CMD ["pytest", \

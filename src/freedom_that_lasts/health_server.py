@@ -2,13 +2,18 @@
 Health check HTTP server for Kubernetes liveness and readiness probes.
 
 Provides endpoints for monitoring the health and readiness of the FTL system.
+
+Fun fact: The first DDoS attack happened in 1999 against Yahoo!, which was
+the #1 search engine at the time. Rate limiting has been essential ever since!
 """
 
 import sqlite3
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 from freedom_that_lasts.kernel.logging import get_logger
 
@@ -16,9 +21,41 @@ logger = get_logger(__name__)
 
 app = Flask(__name__)
 
+# Rate limiting for DoS protection
+# Fun fact: Twitter uses rate limiting to prevent API abuse - 300 requests per 15 minutes for users!
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["100 per minute"],  # Global default
+    storage_uri="memory://",  # In-memory storage (fast, suitable for single instance)
+)
+
 # Global state - will be set by initialize_health_server()
 _db_path: Path | None = None
 _ftl_instance: Any = None  # FTL instance for health checks
+
+
+@app.after_request
+def add_security_headers(response: Any) -> Any:
+    """
+    Add security headers to all HTTP responses.
+
+    Fun fact: The X-Frame-Options header was introduced by Microsoft in IE8 (2008)
+    to prevent clickjacking attacks. Now it's a web standard protecting billions!
+
+    Headers added:
+    - X-Content-Type-Options: Prevents MIME type sniffing
+    - X-Frame-Options: Prevents clickjacking attacks
+    - X-XSS-Protection: Enables browser XSS filters (legacy support)
+    - Strict-Transport-Security: Enforces HTTPS (when behind TLS proxy)
+    - Content-Security-Policy: Restricts resource loading (defense in depth)
+    """
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    response.headers['Content-Security-Policy'] = "default-src 'none'; script-src 'none'; style-src 'none'"
+    return response
 
 
 def initialize_health_server(db_path: str | Path, ftl_instance: Any = None) -> None:
@@ -36,11 +73,13 @@ def initialize_health_server(db_path: str | Path, ftl_instance: Any = None) -> N
 
 
 @app.route("/health/live", methods=["GET"])
+@limiter.limit("30 per minute")  # Liveness checks should be frequent but not abusive
 def liveness() -> tuple[dict[str, Any], int]:
     """
     Liveness probe - checks if the process is running.
 
     Kubernetes will restart the pod if this fails.
+    Rate limit: 30 requests per minute (one every 2 seconds).
 
     Returns:
         JSON response with status and 200 OK
@@ -49,6 +88,7 @@ def liveness() -> tuple[dict[str, Any], int]:
 
 
 @app.route("/health/ready", methods=["GET"])
+@limiter.limit("30 per minute")  # Readiness checks should be frequent but not abusive
 def readiness() -> tuple[dict[str, Any], int]:
     """
     Readiness probe - checks if the service is ready to accept requests.
@@ -136,9 +176,12 @@ def readiness() -> tuple[dict[str, Any], int]:
 
 
 @app.route("/health", methods=["GET"])
+@limiter.limit("10 per minute")  # Detailed health is expensive, limit more strictly
 def detailed_health() -> tuple[dict[str, Any], int]:
     """
     Detailed health check - includes FreedomHealth metrics if available.
+
+    Rate limit: 10 requests per minute (more expensive query).
 
     Returns:
         JSON response with detailed health information

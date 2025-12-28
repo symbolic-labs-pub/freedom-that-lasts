@@ -2,12 +2,16 @@
 Structured logging framework for Freedom That Lasts.
 
 Provides correlation IDs, context propagation, and JSON output for production observability.
+
+Fun fact: Correlation IDs were popularized by Google's Dapper distributed tracing system
+in 2010. Now they're essential for debugging microservices - we're using them in a monolith!
 """
 
 import contextvars
 import logging
+import os
+import secrets
 import sys
-import uuid
 from typing import Any
 
 import structlog
@@ -19,8 +23,13 @@ correlation_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
 
 
 def generate_correlation_id() -> str:
-    """Generate a new correlation ID."""
-    return str(uuid.uuid4())
+    """
+    Generate a new correlation ID using cryptographic randomness.
+
+    Uses secrets.token_urlsafe() instead of uuid.uuid4() for cryptographic strength.
+    Returns a 22-character URL-safe base64 string (128 bits of entropy).
+    """
+    return secrets.token_urlsafe(16)  # 16 bytes = 128 bits = 22 base64 chars
 
 
 def get_correlation_id() -> str:
@@ -118,6 +127,50 @@ def get_logger(name: str) -> structlog.stdlib.BoundLogger:
     return structlog.get_logger(name)
 
 
+def is_production() -> bool:
+    """
+    Determine if running in production environment.
+
+    Checks ENVIRONMENT environment variable. Returns True if 'production', False otherwise.
+    Defaults to False (development) if not set.
+    """
+    return os.getenv("ENVIRONMENT", "development").lower() == "production"
+
+
+# Sensitive fields that should be redacted from logs (PII and financial data)
+REDACTED_FIELDS = {
+    "actor_id",
+    "from_actor",
+    "to_actor",
+    "amount",
+    "password",
+    "token",
+    "secret",
+    "api_key",
+    "private_key",
+}
+
+
+def redact_context(context: dict[str, Any]) -> dict[str, Any]:
+    """
+    Redact sensitive fields from log context to prevent PII leakage.
+
+    Args:
+        context: Dictionary of log context
+
+    Returns:
+        New dictionary with sensitive fields redacted
+
+    Example:
+        >>> redact_context({"actor_id": "alice", "operation": "delegate"})
+        {"actor_id": "***REDACTED***", "operation": "delegate"}
+    """
+    return {
+        k: "***REDACTED***" if k in REDACTED_FIELDS else v
+        for k, v in context.items()
+    }
+
+
 # Convenience context manager for logging operations with timing
 class LogOperation:
     """Context manager for logging operations with automatic timing."""
@@ -142,14 +195,16 @@ class LogOperation:
         self.start_time: float = 0.0
 
     def __enter__(self) -> "LogOperation":
-        """Start operation logging."""
+        """Start operation logging with PII redaction."""
         import time
 
         self.start_time = time.perf_counter()
+        # Redact sensitive fields before logging
+        redacted = redact_context(self.context)
         self.logger.info(
             f"{self.operation} started",
             operation=self.operation,
-            **self.context,
+            **redacted,
         )
         return self
 
@@ -159,10 +214,14 @@ class LogOperation:
         exc_val: BaseException | None,
         exc_tb: Any,
     ) -> None:
-        """Complete operation logging with duration."""
+        """Complete operation logging with duration, PII redaction, and environment-aware stack traces."""
         import time
 
         duration_ms = (time.perf_counter() - self.start_time) * 1000
+        # Redact sensitive fields before logging
+        redacted = redact_context(self.context)
+        # Only include stack traces in development (not production)
+        production = is_production()
 
         if exc_type is None:
             # Success
@@ -170,14 +229,14 @@ class LogOperation:
                 f"{self.operation} completed",
                 operation=self.operation,
                 duration_ms=round(duration_ms, 2),
-                **self.context,
+                **redacted,
             )
         else:
-            # Error
+            # Error - include stack trace only in development
             self.logger.error(
                 f"{self.operation} failed",
                 operation=self.operation,
                 duration_ms=round(duration_ms, 2),
-                exc_info=True,
-                **self.context,
+                exc_info=not production,  # Stack traces only in development
+                **redacted,
             )

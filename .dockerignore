@@ -32,6 +32,11 @@ ENV/
 env/
 .venv
 
+# Environment files (prevent secret leakage)
+.env
+.env.*
+!.env.example
+
 # IDE
 .vscode/
 .idea/

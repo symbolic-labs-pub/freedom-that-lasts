@@ -38,6 +38,7 @@ dependencies = [
     "structlog>=24.0.0,<25.0.0",  # Structured logging
     "prometheus-client>=0.20.0,<1.0.0",  # Metrics collection
     "flask>=3.0.0,<4.0.0",  # Health check server
+    "flask-limiter>=3.5.0,<4.0.0",  # Rate limiting for DoS protection
 ]
 
 [project.optional-dependencies]
