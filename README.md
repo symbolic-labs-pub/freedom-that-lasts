@@ -1,6 +1,8 @@
 # Freedom That Lasts
 
-**Event-sourced governance kernel preserving future option space through revocable delegation, time-bound laws, and anti-tyranny safeguards.**
+## Buy the book for the full experience, to see the full picture:
+
+**Event-sourced governance kernel preserving future option space through revocable delegation, time-bound learning laws, and anti-tyranny safeguards.**
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
@@ -66,7 +68,7 @@ law = ftl.create_law(
     title="Primary care access pilot",
     scope={"territory": "Albuquerque District 5"},
     reversibility_class="SEMI_REVERSIBLE",
-    checkpoints=[30, 90, 180, 365],  # Days until review required
+    checkpoints=[30, 90, 180, 365, 1095, 2920, 5475],  # Days until review required
     params={"max_wait_days": 10}
 )
 
@@ -308,4 +310,4 @@ Based on the book "Freedom That Lasts" which formalizes freedom as future option
 
 ---
 
-**Fun Fact**: The average lifespan of a democracy is around 200 years. This system aims to extend that by making freedom structurally stable, not just aspirational.
+**Fun Fact**: The average lifespan of a democracy is around 200 years. This framework aims to extend that by making freedom structurally stable, not just aspirational.
