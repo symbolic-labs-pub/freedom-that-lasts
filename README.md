@@ -41,15 +41,6 @@ Freedom That Lasts is a Python package implementing the governance concepts from
 - **Auditable Selection**: Deterministic seed-based randomness with cryptographic strength
 - **Reputation System**: Performance-based scoring with automatic threshold enforcement
 
-### Security & Infrastructure
-- **Cryptographic RNG**: Secure random generation for correlation IDs and selection mechanisms
-- **Path Traversal Protection**: Validated database paths with canonical resolution
-- **HTTP Security Headers**: CSP, HSTS, X-Frame-Options, XSS protection
-- **Rate Limiting**: Graduated limits on health endpoints (10-30 req/min)
-- **PII Redaction**: Automatic log sanitization for privacy-by-default
-- **Container Hardening**: Read-only filesystems, non-root users, localhost binding
-- **Supply Chain Security**: Pinned Docker images and GitHub Actions to commit SHAs
-
 ## Quick Start (60 seconds)
 
 ### Python API
@@ -177,7 +168,7 @@ ftl expenditure list --budget <id>
 
 ```bash
 # From source
-git clone https://github.com/freedom-that-lasts/freedom-that-lasts
+git clone https://github.com/symbolic-labs-pub/freedom-that-lasts
 cd freedom-that-lasts
 pip install -e ".[dev]"
 
@@ -192,7 +183,7 @@ python examples/budget_example.py   # Budget module examples
 
 ## Current Status:
 
-### ✅ v0.1: Governance Kernel
+### v0.1: Governance Kernel
 - **Kernel**: Event store (SQLite), projection store, IDs (UUIDv7), time abstraction, SafetyPolicy
 - **Law Module**: Workspace management, delegation DAG with TTL/expiry, law lifecycle (DRAFT→ACTIVE→REVIEW→SUNSET)
 - **Safeguards**: Delegation concentration metrics (Gini), FreedomHealth scorecard, reflex triggers
@@ -203,7 +194,7 @@ python examples/budget_example.py   # Budget module examples
 - **Examples**: city_pilot.py, replay_demo.py
 - **Tests**: 76 tests, 72% coverage
 
-### ✅ v0.2: Budget Module
+### v0.2: Budget Module
 - **Budget Aggregate**: Law-scoped budgets with flex classes (CRITICAL/IMPORTANT/ASPIRATIONAL)
 - **Multi-Gate Enforcement**: Step-size (5%/15%/50%), balance (zero-sum), authority, limits
 - **Commands & Events**: CreateBudget, ActivateBudget, AdjustAllocation, ApproveExpenditure, CloseBudget
@@ -216,7 +207,7 @@ python examples/budget_example.py   # Budget module examples
 - **Tests**: 22 budget tests (invariants, handlers, projections, triggers, integration, CLI)
 - **Coverage**: 87% invariants, 87% handlers, 83% projections, 100% triggers
 
-### ✅ v0.3: Resources Module
+### v0.3: Resources Module
 - **Tender Aggregate**: Law-scoped procurement with constitutional supplier selection
 - **Selection Mechanisms**: Rotation (load-balancing), random (fairness), hybrid (balanced)
 - **Feasibility Constraints**: Capacity, certification, experience, reputation thresholds
@@ -230,7 +221,7 @@ python examples/budget_example.py   # Budget module examples
 - **Tests**: 30+ resource tests (selection algorithms, constraints, projections, triggers)
 - **Coverage**: 85%+ across all resource components
 
-### ✅ v1.0: Security & Hardening
+### v1.0: Security & Hardening
 - **Cryptographic RNG**: `secrets.token_urlsafe()` for correlation IDs, SHA-256 for deterministic selection
 - **Path Traversal Protection**: Validated database paths with canonical resolution and base directory enforcement
 - **HTTP Security Headers**: CSP, HSTS, X-Frame-Options, X-Content-Type-Options, XSS protection
