@@ -66,7 +66,7 @@ law = ftl.create_law(
     title="Primary care access pilot",
     scope={"territory": "Albuquerque District 5"},
     reversibility_class="SEMI_REVERSIBLE",
-    checkpoints=[30, 90, 180, 365],  # Days until review required
+    checkpoints=[30, 90, 180, 365, 1095, 3650],  # Days until review required
     params={"max_wait_days": 10}
 )
 
