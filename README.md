@@ -20,7 +20,7 @@ Freedom That Lasts is a Python package implementing the governance concepts from
 - **Event Sourcing**: Append-only event log as source of truth
 - **Idempotency**: Same command = same result (deterministic replay)
 - **Revocable Delegation**: Authority with TTL and automatic expiry
-- **Time-Bound Lerning Laws**: Mandatory review checkpoints prevent drift
+- **Time-Bound Learning Laws**: Mandatory review checkpoints prevent drift
 - **Anti-Tyranny Safeguards**: Concentration metrics, automatic warnings/halts
 - **Privacy-by-Default**: Aggregate transparency without individual coercion
 - **FreedomHealth Scorecard**: Real-time risk monitoring (GREEN/YELLOW/RED)
