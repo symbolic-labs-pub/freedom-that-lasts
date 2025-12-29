@@ -125,6 +125,14 @@ jobs:
           echo "test_date=$(date -u +%Y-%m-%d)" >> $GITHUB_OUTPUT
           echo "run_url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_OUTPUT
 
+      - name: Extract SQLite version
+        if: always()
+        id: sqlite-version
+        run: |
+          SQLITE_VERSION=$(python3 -c "import sqlite3; print(sqlite3.sqlite_version)")
+          echo "version=$SQLITE_VERSION" >> $GITHUB_OUTPUT
+          echo "SQLite version: $SQLITE_VERSION"
+
       - name: Upload coverage JSON for badge
         if: always()  # Always upload for badge generation
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
@@ -156,6 +164,7 @@ jobs:
       commit_sha: ${{ steps.test-metadata.outputs.commit_sha }}
       test_date: ${{ steps.test-metadata.outputs.test_date }}
       run_url: ${{ steps.test-metadata.outputs.run_url }}
+      sqlite_version: ${{ steps.sqlite-version.outputs.version }}
 
   generate-badges:
     name: Generate Coverage Badge
@@ -288,14 +297,21 @@ jobs:
               print(f"Updated all badges: pass, {test_date}, {commit_sha}")
           else:
               print(f"Updated last-run badge only: fail, {test_date} (preserved pass badges)")
+
+          # Generate SQLite version badge (always blue, informational)
+          sqlite_version = "${{ needs.test.outputs.sqlite_version }}"
+          with open("badges/sqlite.svg", "w") as f:
+              f.write(generate_badge_svg("sqlite", sqlite_version, "#4c1", "https://www.sqlite.org"))
+
+          print(f"Generated SQLite badge: {sqlite_version}")
           EOF
 
       - name: Commit and push badges to master
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git add badges/coverage.svg badges/test-date.svg badges/test-commit.svg badges/test-run.svg
-          git diff --quiet && git diff --staged --quiet || git commit -m "Update badges (coverage + test status) [skip ci]"
+          git add badges/coverage.svg badges/test-date.svg badges/test-commit.svg badges/test-run.svg badges/sqlite.svg
+          git diff --quiet && git diff --staged --quiet || git commit -m "Update badges (coverage + test status + sqlite) [skip ci]"
           git push
 
   summary:

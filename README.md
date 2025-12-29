@@ -12,6 +12,8 @@
 
 ![Tests Pass](./badges/test-date.svg) ![Test Commit](./badges/test-commit.svg) ![Last Run](./badges/test-run.svg)
 
+![SQLite](./badges/sqlite.svg)
+
 ## Overview
 
 Freedom That Lasts is a Python package implementing the governance concepts from the book "Freedom That Lasts" as deterministic, auditable code. It demonstrates that freedom can be structurally stable, not just aspirational.
