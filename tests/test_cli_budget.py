@@ -442,7 +442,7 @@ def test_expenditure_with_metadata():
         item_id = list(budget_data["items"].keys())[0]
 
         # Approve with metadata
-        metadata = json.dumps({"vendor": "TechCorp", "po_number": "12345"})
+        metadata = json.dumps({"vendor": "Acme-2 Corp", "po_number": "12345"})
         result = runner.invoke(
             app,
             [

@@ -90,9 +90,9 @@ def scenario_1_basic_tender_lifecycle() -> None:
 
         # Register first supplier
         supplier1 = ftl.register_supplier(
-            name="SecureInfraCo",
+            name="Acme Security Corp",
             supplier_type="company",
-            metadata={"contact": "ops@secureinfra.com", "founded": "2015"},
+            metadata={"contact": "ops@acmesecurity.example.com", "founded": "2015"},
         )
         print(f"✓ Registered supplier: {supplier1['name']} ({supplier1['supplier_id']})")
 
@@ -297,7 +297,7 @@ def scenario_1_basic_tender_lifecycle() -> None:
             evidence=[
                 {
                     "evidence_type": "audit_report",
-                    "issuer": "SecurityAuditorCo",
+                    "issuer": "Acme Audit Services",
                     "issued_at": "2025-05-20T00:00:00Z",
                     "document_uri": "https://audit.example.com/reports/TENDER-001-SEC",
                 }
@@ -871,7 +871,7 @@ def scenario_4_supplier_concentration() -> None:
 
         # Register 3 suppliers with same capabilities
         suppliers = []
-        for i, name in enumerate(["DominantCorp", "CompetitorA", "CompetitorB"]):
+        for i, name in enumerate(["Acme-1 Corp", "CompetitorA", "CompetitorB"]):
             supplier = ftl.register_supplier(name=name, supplier_type="company")
             ftl.add_capability_claim(
                 supplier_id=supplier["supplier_id"],
@@ -1205,7 +1205,7 @@ def scenario_5_delivery_and_reputation() -> None:
             evidence=[
                 {
                     "evidence_type": "audit_report",
-                    "issuer": "SecurityAuditCo",
+                    "issuer": "Acme Audit Services",
                     "issued_at": datetime(2025, 1, 25).isoformat(),
                     "document_uri": "https://audit.example.com/T1-PASS",
                 }

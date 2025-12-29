@@ -469,10 +469,10 @@ def test_budget_metadata_preservation():
             item_id=item_id,
             amount=25000,
             purpose="Server upgrade",
-            metadata={"department": "IT", "vendor": "TechCorp"},
+            metadata={"department": "IT", "vendor": "Acme-2 Corp"},
         )
 
         # Check expenditure metadata
         expenditures = ftl.get_expenditures(budget["budget_id"])
         assert expenditures[0]["metadata"]["department"] == "IT"
-        assert expenditures[0]["metadata"]["vendor"] == "TechCorp"
+        assert expenditures[0]["metadata"]["vendor"] == "Acme-2 Corp"
