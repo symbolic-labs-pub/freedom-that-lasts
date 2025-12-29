@@ -10,6 +10,8 @@
 [![CI Status](https://github.com/symbolic-labs-pub/freedom-that-lasts/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/symbolic-labs-pub/freedom-that-lasts/actions/workflows/ci.yml)
 ![Coverage](./badges/coverage.svg)
 
+![Tests Pass](./badges/test-date.svg) ![Test Commit](./badges/test-commit.svg) ![Last Run](./badges/test-run.svg)
+
 ## Overview
 
 Freedom That Lasts is a Python package implementing the governance concepts from the book "Freedom That Lasts" as deterministic, auditable code. It demonstrates that freedom can be structurally stable, not just aspirational.

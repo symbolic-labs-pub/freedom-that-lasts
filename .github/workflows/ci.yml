@@ -95,6 +95,36 @@ jobs:
           path: test-results/junit.xml
           retention-days: 30
 
+      - name: Extract test metadata
+        if: always()  # Run even if tests fail
+        id: test-metadata
+        run: |
+          python3 << 'EOF'
+          import xml.etree.ElementTree as ET
+          import os
+
+          # Parse junit.xml to determine test status
+          try:
+              tree = ET.parse('test-results/junit.xml')
+              root = tree.getroot()
+              failures = int(root.attrib.get('failures', 0))
+              errors = int(root.attrib.get('errors', 0))
+              test_status = 'pass' if (failures == 0 and errors == 0) else 'fail'
+          except:
+              test_status = 'fail'
+
+          # Write test status to GITHUB_OUTPUT
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"test_status={test_status}\n")
+
+          print(f"Test status: {test_status}")
+          EOF
+
+          # Extract commit and date info
+          echo "commit_sha=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+          echo "test_date=$(date -u +%Y-%m-%d)" >> $GITHUB_OUTPUT
+          echo "run_url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_OUTPUT
+
       - name: Upload coverage JSON for badge
         if: always()  # Always upload for badge generation
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
@@ -122,6 +152,10 @@ jobs:
     outputs:
       coverage: ${{ steps.coverage.outputs.percentage }}
       badge_color: ${{ steps.coverage.outputs.color }}
+      test_status: ${{ steps.test-metadata.outputs.test_status }}
+      commit_sha: ${{ steps.test-metadata.outputs.commit_sha }}
+      test_date: ${{ steps.test-metadata.outputs.test_date }}
+      run_url: ${{ steps.test-metadata.outputs.run_url }}
 
   generate-badges:
     name: Generate Coverage Badge
@@ -197,12 +231,71 @@ jobs:
           print(f"Generated coverage badge: {coverage_str} ({color})")
           EOF
 
-      - name: Commit and push badge to master
+      - name: Generate test status badges
+        run: |
+          python3 << 'EOF'
+          import os
+
+          test_status = "${{ needs.test.outputs.test_status }}"
+          commit_sha = "${{ needs.test.outputs.commit_sha }}"
+          test_date = "${{ needs.test.outputs.test_date }}"
+          run_url = "${{ needs.test.outputs.run_url }}"
+          commit_url = "${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}"
+
+          def generate_badge_svg(label, value, color, link_url):
+              label_width = len(label) * 6 + 10
+              value_width = len(value) * 7 + 10
+              total_width = label_width + value_width
+
+              return f'''<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="{total_width}" height="20" role="img">
+              <a target="_blank" xlink:href="{link_url}">
+                  <linearGradient id="s" x2="0" y2="100%">
+                      <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
+                      <stop offset="1" stop-opacity=".1"/>
+                  </linearGradient>
+                  <clipPath id="r">
+                      <rect width="{total_width}" height="20" rx="3" fill="#fff"/>
+                  </clipPath>
+                  <g clip-path="url(#r)">
+                      <rect width="{label_width}" height="20" fill="#555"/>
+                      <rect x="{label_width}" width="{value_width}" height="20" fill="{color}"/>
+                      <rect width="{total_width}" height="20" fill="url(#s)"/>
+                  </g>
+                  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="110">
+                      <text aria-hidden="true" x="{label_width/2*10}" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="{(label_width-10)*10}">{label}</text>
+                      <text x="{label_width/2*10}" y="140" transform="scale(.1)" fill="#fff" textLength="{(label_width-10)*10}">{label}</text>
+                      <text aria-hidden="true" x="{(label_width + value_width/2)*10}" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="{(value_width-10)*10}">{value}</text>
+                      <text x="{(label_width + value_width/2)*10}" y="140" transform="scale(.1)" fill="#fff" textLength="{(value_width-10)*10}">{value}</text>
+                  </g>
+              </a>
+          </svg>'''
+
+          os.makedirs("badges", exist_ok=True)
+
+          # ALWAYS update badge 3 (last run) - shows current status
+          run_color = "#4c1" if test_status == "pass" else "#e05d44"
+          with open("badges/test-run.svg", "w") as f:
+              f.write(generate_badge_svg("last run", test_date, run_color, run_url))
+
+          # ONLY update badges 1 & 2 if tests pass (preserve on failure)
+          if test_status == "pass":
+              with open("badges/test-date.svg", "w") as f:
+                  f.write(generate_badge_svg("tests pass", test_date, "#4c1", commit_url))
+
+              with open("badges/test-commit.svg", "w") as f:
+                  f.write(generate_badge_svg("commit", commit_sha, "#4c1", commit_url))
+
+              print(f"Updated all badges: pass, {test_date}, {commit_sha}")
+          else:
+              print(f"Updated last-run badge only: fail, {test_date} (preserved pass badges)")
+          EOF
+
+      - name: Commit and push badges to master
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git add badges/coverage.svg
-          git diff --quiet && git diff --staged --quiet || git commit -m "Update coverage badge [skip ci]"
+          git add badges/coverage.svg badges/test-date.svg badges/test-commit.svg badges/test-run.svg
+          git diff --quiet && git diff --staged --quiet || git commit -m "Update badges (coverage + test status) [skip ci]"
           git push
 
   summary:
