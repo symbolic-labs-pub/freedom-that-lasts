@@ -73,7 +73,7 @@ One area deserves particular care: procurement.
 
 Eligibility criteria are not bureaucratic details. They are **the rules of the game written into reality**.
 
-Define them precisely.
+Those are your collective aspects. Define them precisely.
 Know that much will depend on them in practice.
 Remember that they can be changed—but never without consequences.
 

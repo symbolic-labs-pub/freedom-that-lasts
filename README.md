@@ -64,7 +64,7 @@ Visit tha Amazon Bookstore for Kindle and paperback versions.
 ## Notes
 
 - [A Note on Consensus](docs/notes/consensus.md)
-- [Founder Operating Principles Preserving Optionality.pdf](original_documentation/Founder_Operating_Principles_Preserving_Optionality.pdf)]
+- [Founder Operating Principles Preserving Optionality](original_documentation/Founder_Operating_Principles_Preserving_Optionality.pdf)
 
 ## Press
 
