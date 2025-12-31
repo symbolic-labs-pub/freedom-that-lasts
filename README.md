@@ -1,4 +1,4 @@
-# [Freedom That Lasts](http://github.com/symbolic-labs-pub/freedom-that-lasts)
+# [Freedom That Lasts](https://github.com/symbolic-labs-pub/freedom-that-lasts?tab=readme-ov-file#freedom-that-lasts)
 
 Designing Complex Societies That Keep the Future Open
 
