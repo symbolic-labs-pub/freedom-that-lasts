@@ -7,10 +7,10 @@ Designing Complex Societies That Keep the Future Open
 
 ## Whitepaper Series
 
-- I. [**Academic**](docs/whitepapers/academic.md) – theory, game theory, systems
-- II. [**Policy / Institutional**](docs/whitepapers/policy_and_institutional.md) – governance, legitimacy, transition
-- III. [**Technical / Engineering**](docs/whitepapers/technical.md) – architecture, algorithms, control loops
-- IV. [**Common Sense**](docs/whitepapers/common_sense.md) – meaning, intuition, trust
+- I. [Academic](docs/whitepapers/academic.md) – theory, game theory, systems
+- II. [Policy / Institutional](docs/whitepapers/policy_and_institutional.md) – governance, legitimacy, transition
+- III. [Technical / Engineering](docs/whitepapers/technical.md) – architecture, algorithms, control loops
+- IV. [Common Sense](docs/whitepapers/common_sense.md) – meaning, intuition, trust
 
 This is a **stack** — concept → institution → system → story.
 
@@ -69,6 +69,11 @@ Visit tha Amazon Bookstore for Kindle and paperback versions.
 ## Press
 
 - [Press Kit](docs/press_kit)
+
+## Contribution
+
+- Call of Universities, Academy and Research & Development for creative, intuitive visualizations (preferably in three.js) of the budget, 
+- optionally interactively welcome and handling intentional direction actions in step sizes. TODO: Tutorials on how to
 
 ## Codebase Health
 
