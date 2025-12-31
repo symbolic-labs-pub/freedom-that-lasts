@@ -78,7 +78,7 @@ Remember that they can be changed—but never without consequences.
 
 A system that selects capability rather than promises will behave differently from one that rewards theater. Choose accordingly.
 
-There is a profound ground truth of all evidence: they must have a unit. 
+There is a profound ground truth of all evidence: they must have a measurable unit. 
 
 ---
 
