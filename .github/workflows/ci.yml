@@ -310,10 +310,10 @@ jobs:
           import os.path
 
           license_valid = False
-          license_file = "LICENCE.txt"
+          license_file = "LICENSE.txt"
           required_string = "http://www.apache.org/licenses/LICENSE-2.0"
 
-          # Check if LICENCE.txt exists and contains the required string
+          # Check if LICENSE.txt exists and contains the required string
           if os.path.isfile(license_file):
               with open(license_file, 'r', encoding='utf-8') as f:
                   license_content = f.read()
