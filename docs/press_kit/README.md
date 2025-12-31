@@ -74,10 +74,14 @@ One area deserves particular care: procurement.
 Eligibility criteria are not bureaucratic details. They are **the rules of the game written into reality**. They must treasure your **collective aspects**.
 
 Define them precisely.
+
 Know that much will depend on them in practice.
+
 Remember that they can be changed—but never without consequences.
 
 A system that selects capability rather than promises will behave differently from one that rewards theater. Choose accordingly.
+
+There is a profound ground truth of all evidence: they must have a unit. 
 
 ---
 
