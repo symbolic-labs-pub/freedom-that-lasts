@@ -6,7 +6,7 @@ It speaks about decision routing, reversibility, feedback cycles, scopes, and le
 
 But something subtle happens once you truly understand the idea.
 
-Once you are familiar with it, you begin to sense—not intellectually, but almost physically—the **absence of it everywhere else**.
+Once you are familiar with it, you begin to sense—not just intellectually, but almost physically—the **absence of it everywhere else**.
 
 You start noticing how often decisions are made without a clear owner.
 How frequently consequences appear long after accountability has dissolved.
@@ -21,8 +21,7 @@ And once you notice that absence, it becomes difficult to ignore.
 This framework does not ask for belief.
 It asks for *serious questions*.
 
-Show it to your best engineers.
-Not to impress them—but to challenge them.
+Show it to your best engineers. To challenge them.
 
 Ask them:
 
@@ -74,9 +73,7 @@ One area deserves particular care: procurement.
 Eligibility criteria are not bureaucratic details. They are **the rules of the game written into reality**. They must treasure your **collective aspects**.
 
 Define them precisely.
-
 Know that much will depend on them in practice.
-
 Remember that they can be changed—but never without consequences.
 
 A system that selects capability rather than promises will behave differently from one that rewards theater. Choose accordingly.
