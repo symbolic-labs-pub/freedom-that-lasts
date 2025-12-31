@@ -83,11 +83,19 @@ Such systems appear free locally but are globally unstable.
 
 ### 3.1 Pareto dominance revisited
 
+<br>
+
 A state $S_{1}$ Pareto-dominates $S_{2}$ if at least one agent is better off and none are worse off.
+
+<br>
 
 In dynamic settings, this must be extended:
 
+<br>
+
 > A trajectory $T_{1}$ dominates $T_{2}$ if it preserves or expands the future option space for all agents, relative to $T_{2}$.
+
+<br>
 
 Short-term Pareto improvements that reduce future options are **not Pareto-optimal over time**.
 
