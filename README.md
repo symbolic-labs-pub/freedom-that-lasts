@@ -72,8 +72,9 @@ Visit tha Amazon Bookstore for Kindle and paperback versions.
 
 ## Contribution
 
-- Call of Universities, Academy and Research & Development for creative, intuitive visualizations (preferably in three.js) of the budget, 
-- optionally interactively welcome and handling intentional direction actions in step sizes. TODO: Tutorials on how to
+- Call of Universities, Academy and Research & Development for creative, intuitive [visualizations in 3D](https://threejs.org/examples/) of the budget, 
+- optionally interactively welcome members, citizens to manage intentional direction actions in step sizes.
+- TODO: Tutorials with example on how to
 
 ## Codebase Health
 
