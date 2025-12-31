@@ -2,6 +2,52 @@
 
 This document analyzes threats to freedom in governance systems and how Freedom That Lasts mitigates them through structural safeguards.
 
+## Table of Contents
+
+- [Core Threat: Erosion of Future Option Space](#core-threat-erosion-of-future-option-space)
+  - [Threat Taxonomy](#threat-taxonomy)
+- [Threat 1: Delegation Concentration (Oligarchy Formation)](#threat-1-delegation-concentration-oligarchy-formation)
+  - [Attack Scenario](#attack-scenario)
+  - [FTL Mitigation: Concentration Metrics + Automatic Halts](#ftl-mitigation-concentration-metrics--automatic-halts)
+  - [Layered Defense](#layered-defense)
+- [Threat 2: Irreversible Drift](#threat-2-irreversible-drift)
+  - [FTL Mitigation: Mandatory Review Checkpoints](#ftl-mitigation-mandatory-review-checkpoints)
+- [Threat 3: Coercion Through Vote Visibility](#threat-3-coercion-through-vote-visibility)
+  - [FTL Mitigation: Privacy by Default](#ftl-mitigation-privacy-by-default)
+- [Threat 4: Circular Authority (Bootstrap Problem)](#threat-4-circular-authority-bootstrap-problem)
+  - [FTL Mitigation: Acyclic Delegation DAG](#ftl-mitigation-acyclic-delegation-dag)
+- [Threat 5: Permanent Delegation (Authority Entrenchment)](#threat-5-permanent-delegation-authority-entrenchment)
+  - [FTL Mitigation: Mandatory TTL with Maximum](#ftl-mitigation-mandatory-ttl-with-maximum)
+- [Threat 6: Complexity Overwhelm](#threat-6-complexity-overwhelm)
+  - [FTL Mitigation: Bounded Cognitive Load](#ftl-mitigation-bounded-cognitive-load)
+- [Threat 7: Database Tampering](#threat-7-database-tampering)
+  - [Current Mitigation: Append-Only Events](#current-mitigation-append-only-events)
+- [Threat 8: Sybil Attacks (Fake Actor Creation)](#threat-8-sybil-attacks-fake-actor-creation)
+  - [Current Status: Out of Scope for v0.1](#current-status-out-of-scope-for-v01)
+- [Threat 9: Budget Manipulation (v0.2)](#threat-9-budget-manipulation-v02)
+  - [FTL Mitigation: Multi-Gate Enforcement](#ftl-mitigation-multi-gate-enforcement)
+- [Threat 10: Time Manipulation](#threat-10-time-manipulation)
+  - [FTL Mitigation: Time Provider Abstraction](#ftl-mitigation-time-provider-abstraction)
+- [Threat 11: Path Traversal (v1.0)](#threat-11-path-traversal-v10)
+  - [FTL Mitigation: Path Validation](#ftl-mitigation-path-validation)
+- [Threat 12: Weak Random Number Generation (v1.0)](#threat-12-weak-random-number-generation-v10)
+  - [FTL Mitigation: Cryptographic RNG](#ftl-mitigation-cryptographic-rng)
+- [Threat 13: Denial of Service (DoS) (v1.0)](#threat-13-denial-of-service-dos-v10)
+  - [FTL Mitigation: Rate Limiting](#ftl-mitigation-rate-limiting)
+- [Threat 14: Information Disclosure via Logs (v1.0)](#threat-14-information-disclosure-via-logs-v10)
+  - [FTL Mitigation: PII Redaction](#ftl-mitigation-pii-redaction)
+- [Threat 15: Supply Chain Attacks (v1.0)](#threat-15-supply-chain-attacks-v10)
+  - [FTL Mitigation: Dependency Pinning](#ftl-mitigation-dependency-pinning)
+- [Threat 16: Container Escape (v1.0)](#threat-16-container-escape-v10)
+  - [FTL Mitigation: Container Hardening](#ftl-mitigation-container-hardening)
+- [Threat 17: HTTP Security Header Bypass (v1.0)](#threat-17-http-security-header-bypass-v10)
+  - [FTL Mitigation: OWASP Security Headers](#ftl-mitigation-owasp-security-headers)
+- [Threat Matrix](#threat-matrix)
+- [Defense in Depth](#defense-in-depth)
+- [Attack Cost Analysis](#attack-cost-analysis)
+- [Future Enhancements](#future-enhancements)
+- [References](#references)
+
 ## Core Threat: Erosion of Future Option Space
 
 **Definition**: Freedom = ability for future generations to make different choices

@@ -190,7 +190,7 @@ After running examples:
    ```
 
 3. **Read the docs**:
-   - [ARCHITECTURE.md](../ARCHITECTURE.md) - Event sourcing design
+   - [ARCHITECTURE.md](../docs/ARCHITECTURE.md) - Event sourcing design
    - [THREAT_MODEL.md](../THREAT_MODEL.md) - Anti-tyranny safeguards
 
 4. **Write your own scenario**:
