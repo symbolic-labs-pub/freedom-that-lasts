@@ -37,7 +37,7 @@ We define **freedom** operationally as:
 
 > The size and connectivity of the future option space available to a society.
 
-Let ( \Omega_t ) denote the set of viable system states reachable from time ( t ). Freedom is not the immediate selection among options at ( t ), but the preservation of ( |\Omega_{t+k}| ) for future ( k ).
+Let $\Omega_{t}$ denote the set of viable system states reachable from time $t$. Freedom is not the immediate selection among options at $t$, but the preservation of $|\Omega_{t+k}|$ for future $k$.
 
 This reframing yields three important implications:
 
@@ -72,9 +72,10 @@ We introduce the concept of an **option-stable equilibrium**, defined as a state
 1. No agent benefits from unilateral deviation,
 2. No coalition benefits from deviation over time,
 3. The expected future option space is non-decreasing:
-   [
-   \mathbb{E}[|\Omega_{t+k}|] \ge |\Omega_t|
-   ]
+
+$$
+\mathbb{E}[|\Omega_{t+k}|] \ge |\Omega_{t}|
+$$
 
 Such equilibria do not emerge spontaneously under unconstrained optimization. They require **institutional structure**.
 
@@ -111,10 +112,12 @@ Persistence without review is structurally prohibited.
 ### 5.3 Budget Step-Size Constraints
 
 Budget adjustments are bounded by adaptive step sizes:
-[
+
+$$
 |\Delta B| \le \alpha \cdot B
-]
-where ( \alpha ) depends on reversibility, capacity, and performance.
+$$
+
+where $\alpha$ depends on reversibility, capacity, and performance.
 
 Citizens vote on *direction*, not magnitude.
 
