@@ -298,20 +298,44 @@ jobs:
           else:
               print(f"Updated last-run badge only: fail, {test_date} (preserved pass badges)")
 
-          # Generate SQLite version badge (always blue, informational)
+          # Generate SQLite version badge (always green, informational)
           sqlite_version = "${{ needs.test.outputs.sqlite_version }}"
           with open("badges/sqlite.svg", "w") as f:
               f.write(generate_badge_svg("sqlite", sqlite_version, "#4c1", "https://www.sqlite.org"))
 
           print(f"Generated SQLite badge: {sqlite_version}")
+
+          # Generate License badge (green if valid, red if invalid)
+          # Fun fact: Apache License 2.0 is one of the most permissive open source licenses!
+          import os.path
+
+          license_valid = False
+          license_file = "LICENCE.txt"
+          required_string = "http://www.apache.org/licenses/LICENSE-2.0"
+
+          # Check if LICENCE.txt exists and contains the required string
+          if os.path.isfile(license_file):
+              with open(license_file, 'r', encoding='utf-8') as f:
+                  license_content = f.read()
+                  if required_string in license_content:
+                      license_valid = True
+
+          # Set badge color: green if valid, red if invalid
+          license_color = "#4c1" if license_valid else "#e05d44"
+          license_status = "Apache 2.0" if license_valid else "invalid"
+
+          with open("badges/license.svg", "w") as f:
+              f.write(generate_badge_svg("license", license_status, license_color, "https://opensource.org/licenses/Apache-2.0"))
+
+          print(f"Generated License badge: {license_status} ({'valid' if license_valid else 'invalid'})")
           EOF
 
       - name: Commit and push badges to master
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git add badges/coverage.svg badges/test-date.svg badges/test-commit.svg badges/test-run.svg badges/sqlite.svg
-          git diff --quiet && git diff --staged --quiet || git commit -m "Update badges (coverage + test status + sqlite) [skip ci]"
+          git add badges/coverage.svg badges/test-date.svg badges/test-commit.svg badges/test-run.svg badges/sqlite.svg badges/license.svg
+          git diff --quiet && git diff --staged --quiet || git commit -m "Update badges (coverage + test status + sqlite + license) [skip ci]"
           git push
 
   summary:
