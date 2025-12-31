@@ -298,10 +298,10 @@ jobs:
           else:
               print(f"Updated last-run badge only: fail, {test_date} (preserved pass badges)")
 
-          # Generate SQLite version badge (always green, informational)
+          # Generate SQLite version badge (always blue, informational)
           sqlite_version = "${{ needs.test.outputs.sqlite_version }}"
           with open("badges/sqlite.svg", "w") as f:
-              f.write(generate_badge_svg("sqlite", sqlite_version, "#4c1", "https://www.sqlite.org"))
+              f.write(generate_badge_svg("sqlite", sqlite_version, "#007ec6", "https://www.sqlite.org"))
 
           print(f"Generated SQLite badge: {sqlite_version}")
 
