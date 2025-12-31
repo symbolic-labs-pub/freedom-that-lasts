@@ -57,10 +57,10 @@ Visit tha Amazon Bookstore for Kindle and paperback versions.
 
 # TODO: belinkelni a konyvboritókat jön ide vagy banner rá
 
-| Front | Back |
-|-----------------------------------------------------------------------------------------------| --------------------- |
- [![freedom_that_lasts_front_cover.png](docs/press_kit/book/freedom_that_lasts_front_cover.png)](https://amazon_book_link) | [![freedom_that_lasts_back_cover.png](docs/press_kit/book/freedom_that_lasts_back_cover.png)](https://amazon_book_link)
-| [Buy the book](https://amazon_book_link) | [Buy the book](https://amazon_book_link) |
+| Front                                                                                                                     | Back                                                                                                                    |
+|---------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------|
+ [![freedom_that_lasts_front_cover.png](docs/press_kit/book/freedom_that_lasts_front_cover.png)](https://amazon_book_link) | [![freedom_that_lasts_back_cover.png](docs/press_kit/book/freedom_that_lasts_back_cover.png)](https://amazon_book_link) 
+| [Order the book](https://amazon_book_link)                                                                                | [Visit Amazon Bookstore](https://amazon_book_link)                                                          |
 ## Notes
 
 - [A Note on Consensus](docs/notes/consensus.md)
