@@ -87,4 +87,8 @@ Visit tha Amazon Bookstore for Kindle and paperback versions.
 
 ![License](./badges/license.svg)
 
+---
 
+**Fun Fact**: The average lifespan of a democracy is around 200 years. This framework aims to extend that by making freedom structurally stable, not just aspirational.
+
+---
