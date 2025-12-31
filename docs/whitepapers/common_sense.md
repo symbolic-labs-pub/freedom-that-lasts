@@ -1,28 +1,3 @@
-Perfect.
-This is **Whitepaper IV / IV – Common Sense**.
-
-This version is written for:
-
-* the general public
-* educators
-* journalists
-* civic movements
-* non-technical decision-makers
-
-Tone:
-
-* clear, calm, non-ideological
-* no jargon unless unavoidable
-* uses metaphors, everyday logic, lived experience
-
-Goal:
-
-* make the system **understandable**
-* make it feel **reasonable**, not radical
-* explain *why this protects freedom instead of threatening it*
-
----
-
 # **Whitepaper IV (Common Sense)**
 
 ## **Freedom That Lasts**

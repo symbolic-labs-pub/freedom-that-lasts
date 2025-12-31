@@ -1,4 +1,4 @@
-## **Mock Right-Wing Ideological Attack**
+## **From the Right-Wing**
 
 **Interviewer:**
 Let me be blunt. This sounds like more bureaucracy. More rules. More systems. How is that not less freedom?

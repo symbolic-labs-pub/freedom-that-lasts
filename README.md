@@ -3,14 +3,14 @@
 Designing Societies That Keep the Future Open
 
 ## Scientific Paper
-- for the [theory](docs/PAPER.md)
+- of the [theory](docs/paper.md).
 
 ## Whitepaper Series
 
-I. [**Academic**](docs/whitepapers/academic.md) – theory, game theory, systems
-II. [**Policy / Institutional**](docs/whitepapers/policy_and_institutional.md) – governance, legitimacy, transition
-III. [**Technical / Engineering**](docs/whitepapers/technical.md) – architecture, algorithms, control loops
-IV. [**Common Sense**](docs/whitepapers/common_sense.md) – meaning, intuition, trust
+- I. [**Academic**](docs/whitepapers/academic.md) – theory, game theory, systems
+- II. [**Policy / Institutional**](docs/whitepapers/policy_and_institutional.md) – governance, legitimacy, transition
+- III. [**Technical / Engineering**](docs/whitepapers/technical.md) – architecture, algorithms, control loops
+- IV. [**Common Sense**](docs/whitepapers/common_sense.md) – meaning, intuition, trust
 
 This is a **stack** — concept → institution → system → story.
 
@@ -55,7 +55,7 @@ Read the [first chapter](docs/first_chapter.pdf) for free
 # TODO: belinkelni a konyvboritókat jön ide vagy banner rá
 
 --+--
-![freedom_that_lasts_front_cover.png](docs/book/freedom_that_lasts_front_cover.png) + ![freedom_that_lasts_back_cover.png](docs/book/freedom_that_lasts_back_cover.png)
+![freedom_that_lasts_front_cover.png](docs/press_kit/book/freedom_that_lasts_front_cover.png) + ![freedom_that_lasts_back_cover.png](docs/press_kit/book/freedom_that_lasts_back_cover.png)
 
 ## Notes
 

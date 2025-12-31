@@ -1,5 +1,7 @@
 This interview is skeptical, occasionally dismissive, and presses on power, feasibility, and ideology.
 
+---
+
 **Interviewer:**
 Let’s get straight to it. Your book sounds nice, but isn’t this just another elite redesign of democracy that regular people never asked for?
 

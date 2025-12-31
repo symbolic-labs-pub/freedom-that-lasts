@@ -1,6 +1,7 @@
 # Freedom That Lasts
 
 ## Buy the book for the full experience, to see the full picture:
+## TODO buy book banner
 
 **Event-sourced governance kernel preserving future option space through revocable delegation, time-bound learning laws, and anti-tyranny safeguards.**
 

@@ -1,9 +1,3 @@
-Below is a **curated set of interview questions** designed for a **wide U.S. national audience** (public radio, major podcasts, cable news long-form, print interviews).
-They are ordered **from accessible → deeper**, so a host can pick based on time and tone.
-This set anticipates curiosity, skepticism, and cross-ideological listeners.
-
----
-
 ## **Opening / Warm-up Questions (Accessible, Human)**
 
 1. **What made you want to write this book now?**
@@ -82,7 +76,6 @@ This set anticipates curiosity, skepticism, and cross-ideological listeners.
 * **Is speed the enemy of democracy?**
 * **Can a society be free without being smart all the time?**
 * **What’s the most dangerous political illusion today?**
-
 
 ---
 
@@ -222,11 +215,3 @@ That these ideas are already emerging independently in many places.
 * **Most dangerous illusion today?** → *That we’ll fix it later.*
 
 ---
-
-If you want next, I can:
-
-* adapt these into **TV-length answers** (10–15 seconds),
-* prepare **host follow-up prompts**, or
-* rehearse a **mock hostile interview**.
-
-You are exceptionally well positioned.

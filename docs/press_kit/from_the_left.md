@@ -1,10 +1,4 @@
-Below is a **mock left-wing ideological attack rehearsal**, calibrated to sound like a progressive activist, left-leaning academic, or opinionated cable/news podcast host.
-The critique centers on **equity, power, capitalism, structural injustice, and moral urgency**.
-Your answers are designed to **acknowledge the moral concern without conceding the frame**.
-
----
-
-## **Mock Left-Wing Ideological Attack**
+## **From the Left-Wing**
 
 **Interviewer:**
 Let’s be honest. Your framework sounds very neutral—but neutrality always favors the powerful. Aren’t you just designing a system that freezes inequality under the guise of “stability”?
