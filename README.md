@@ -1,6 +1,6 @@
 # [Freedom That Lasts](http://github.com/symbolic-labs-pub/freedom-that-lasts)
 
-Designing Societies That Keep the Future Open
+Designing Complex Societies That Keep the Future Open
 
 ## Scientific Paper
 - of the [theory](docs/paper.md).
@@ -29,6 +29,8 @@ Read synopsis for
 - [Common Sense](docs/synopsises/common_sense.md)
 - [Academy](docs/synopsises/academy.md)
 
+[![horizonal_cover.png](docs/press_kit/book/horizonal_cover.png)](https://amazon_book_link)
+
 ### **Author’s Note**
 
 I did not write this book to convince you of a political position.
@@ -48,15 +50,17 @@ If it changes how you think about decisions, even slightly, then it has done its
 
 ## Buy the [book](https://amazon-book-link)!
 
+Read the [first chapter](docs/first_chapter.pdf) for free!
+
 Visit tha Amazon Bookstore for Kindle and paperback versions.
 
-Read the [first chapter](docs/first_chapter.pdf) for free
 
 # TODO: belinkelni a konyvboritókat jön ide vagy banner rá
 
---+--
-![freedom_that_lasts_front_cover.png](docs/press_kit/book/freedom_that_lasts_front_cover.png) + ![freedom_that_lasts_back_cover.png](docs/press_kit/book/freedom_that_lasts_back_cover.png)
-
+| Front | Back |
+|-----------------------------------------------------------------------------------------------| --------------------- |
+ [![freedom_that_lasts_front_cover.png](docs/press_kit/book/freedom_that_lasts_front_cover.png)](https://amazon_book_link) | [![freedom_that_lasts_back_cover.png](docs/press_kit/book/freedom_that_lasts_back_cover.png)](https://amazon_book_link)
+| [Buy the book](https://amazon_book_link) | [Buy the book](https://amazon_book_link) |
 ## Notes
 
 - [A Note on Consensus](docs/notes/consensus.md)

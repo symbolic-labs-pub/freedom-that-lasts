@@ -1,4 +1,4 @@
-## **Opening / Warm-up Questions (Accessible, Human)**
+## **Opening / Warm-up Questions**
 
 1. **What made you want to write this book now?**
 2. **You say this book isn’t about left or right—so what *is* it about, really?**
