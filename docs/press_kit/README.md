@@ -21,7 +21,7 @@ And once you notice that absence, it becomes difficult to ignore.
 This framework does not ask for belief.
 It asks for *serious questions*.
 
-Show it to your best engineers. To challenge them.
+Show it to your best engineers and challenge them.
 
 Ask them:
 
