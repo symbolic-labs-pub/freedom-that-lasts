@@ -72,8 +72,11 @@ Visit tha Amazon Bookstore for Kindle and paperback versions.
 
 ## Contribution
 
-- Call of Universities, Academy and Research & Development for creative, intuitive visualizations (preferably in three.js) of the budget, 
-- optionally interactively welcome and handling intentional direction actions in step sizes. TODO: Tutorials on how to
+- Call of Universities, Academy and Research & Development for creative, intuitive visualizations in [3D](https://threejs.org/examples/) of the budget, 
+- optionally interactively welcome members, citizens to manage intentional direction actions in step sizes.
+- Research and visualize the a/b/c feeds
+- TODO: Tutorials with example on how to
+- Editing, printing folding of the book: the current typography is a catastrophe, I stated it good enough when formulas happend to be rendered properly. All editing, publishing and such is more than welcome. Manuscript is available in markdown.
 
 ## Codebase Health
 
@@ -87,4 +90,8 @@ Visit tha Amazon Bookstore for Kindle and paperback versions.
 
 ![License](./badges/license.svg)
 
+---
 
+**Fun Fact**: The average lifespan of a democracy is around 200 years. This framework aims to extend that by making freedom structurally stable, not just aspirational.
+
+---

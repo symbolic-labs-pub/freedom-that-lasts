@@ -357,7 +357,7 @@ This is an open development - contributions welcome! See implementation plan for
 
 ## License
 
-Apache 2.0 - See [LICENSE](LICENSE) for details.
+Apache 2.0 - See [LICENSE](../LICENSE.txt) for details.
 
 ## Citation
 
@@ -365,4 +365,4 @@ Based on the book "Freedom That Lasts" which formalizes freedom as future option
 
 ---
 
-**Fun Fact**: The average lifespan of a democracy is around 200 years. This framework aims to extend that by making freedom structurally stable, not just aspirational.
+
