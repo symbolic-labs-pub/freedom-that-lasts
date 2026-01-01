@@ -252,7 +252,7 @@ jobs:
           commit_url = "${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}"
 
           def generate_badge_svg(label, value, color, link_url):
-              label_width = len(label) * 6 + 10
+              label_width = len(label) * 7 + 10
               value_width = len(value) * 7 + 10
               total_width = label_width + value_width
 
