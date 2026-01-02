@@ -154,7 +154,7 @@ It is **reliable**.
 
 ---
 
-## **Once You See It**
+## **Once You Understand It**
 
 Once you understand this idea, you begin to notice something else.
 
