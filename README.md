@@ -68,7 +68,7 @@ Visit the Amazon [Bookstore](https://amazon-book-link) for [hardcover](https://a
 
 ## Press
 
-- [Press Kit](docs/press_kit)
+- [**Press Kit**](docs/press_kit)
 
 | [Freedom of Living Beings](docs/press_kit/infographics/01_Freedom_of_Living_Beings.png)                                                                                                                                   | [Freedom in the Future](docs/press_kit/infographics/02_Freedom_in_the_Future.png)                                                                                                                             | [Freedom by the Pillars](docs/press_kit/infographics/03_Freedom_by_the_Pillars.png)                                                                                                                               |
 |----------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|
