@@ -50,12 +50,12 @@ If it changes how you think about decisions, even slightly, then it has done its
 
 ## Buy the [book](https://amazon-book-link)!
 
-Read the [first chapter](docs/first_chapter.pdf) for free!
+Read the [first chapter](docs/first_chapter.pdf) for free! (TODO: can this be done without violating aws publisher rules?)
 
-Visit tha Amazon Bookstore for Kindle and paperback versions.
+Visit tha Amazon [Bookstore](https://amazon-book-link) for [hardcover](https://amazon-book-link), [paperback](https://amazon-book-link) and [Kindle e-book](https://amazon-book-link) versions.
 
 
-# TODO: belinkelni a konyvboritókat jön ide vagy banner rá
+# TODO: update amazon kdp urls!
 
 | Front                                                                                                                     | Back                                                                                                                    |
 |---------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------|
