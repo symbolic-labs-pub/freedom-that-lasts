@@ -70,6 +70,10 @@ Visit tha Amazon Bookstore for Kindle and paperback versions.
 
 - [Press Kit](docs/press_kit)
 
+| [Freedom of Living Beings](docs/press_kit/infographics/01_Freedom_of_Living_Beings.png)                                                                                                                                   | [Freedom in the Future](docs/press_kit/infographics/02_Freedom_in_the_Future.png)                                                                                                                             | [Freedom by the Pillars](docs/press_kit/infographics/03_Freedom_by_the_Pillars.png)                                                                                                                               |
+|----------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [![01_Freedom_of_Living_Beings.png](docs/press_kit/infographics/01_Freedom_of_Living_Beings.png)](docs/press_kit/infographics/01_Freedom_of_Living_Beings.png) | [![02_Freedom_in_the_Future.png](docs/press_kit/infographics/02_Freedom_in_the_Future.png)](docs/press_kit/infographics/02_Freedom_in_the_Future.png) | [![03_Freedom_by_the_Pillars.png](docs/press_kit/infographics/03_Freedom_by_the_Pillars.png)](docs/press_kit/infographics/03_Freedom_by_the_Pillars.png) |
+
 ## Contribution
 
 - Call of Universities, Academy and Research & Development for creative, intuitive visualizations in [3D](https://threejs.org/examples/) of the budget, 
