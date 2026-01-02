@@ -77,6 +77,7 @@ Visit tha Amazon Bookstore for Kindle and paperback versions.
 - Research and visualize the a/b/c feeds
 - TODO: Tutorials with example on how to
 - Editing, printing folding of the book: the current typography is a catastrophe, I stated it good enough when formulas happend to be rendered properly. All editing, publishing and such is more than welcome. Manuscript is available in markdown.
+- Persistence adapters.
 
 ## Codebase Health
 
