@@ -29,7 +29,7 @@ Read synopsis for
 - [Common Sense](docs/synopsises/common_sense.md)
 - [Academy](docs/synopsises/academy.md)
 
-[![horizonal_cover.png](docs/press_kit/book/horizonal_cover.png)](https://amazon_book_link)
+[![horizonal_cover.png](docs/press_kit/book/horizonal_cover.png)](https://www.amazon.com/dp/B0GDYTKHHB)
 
 ### **Author’s Note**
 
@@ -48,19 +48,19 @@ My hope is not that you agree with every idea in these pages. It’s that the bo
 If it changes how you think about decisions, even slightly, then it has done its job.
 
 
-## Buy the [book](https://amazon-book-link)!
+## Buy the [book](https://www.amazon.com/dp/B0GDYTKHHB)!
 
 Read the [first chapter](docs/first_chapter.pdf) for free! (TODO: can this be done without violating aws publisher rules?)
 
-Visit the Amazon [Bookstore](https://amazon-book-link) for [hardcover](https://amazon-book-link), [paperback](https://amazon-book-link) and [Kindle e-book](https://amazon-book-link) versions.
+Visit the Amazon [Bookstore](https://www.amazon.com/dp/B0GDYTKHHB) for [hardcover](https://www.amazon.com/dp/B0GDYM5HPV), [paperback](https://www.amazon.com/dp/B0GDYTKHHB) and [Kindle e-book](https://www.amazon.com/dp/B0GDYXKYTP) versions.
 
 
 # TODO: update amazon kdp urls!
 
 | Front                                                                                                                     | Back                                                                                                                    |
 |---------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------|
- [![freedom_that_lasts_front_cover.png](docs/press_kit/book/freedom_that_lasts_front_cover.png)](https://amazon_book_link) | [![freedom_that_lasts_back_cover.png](docs/press_kit/book/freedom_that_lasts_back_cover.png)](https://amazon_book_link) 
-| [Order the book](https://amazon_book_link)                                                                                | [Visit Amazon Bookstore](https://amazon_book_link)                                                          |
+ [![freedom_that_lasts_front_cover.png](docs/press_kit/book/freedom_that_lasts_front_cover.png)](https://www.amazon.com/dp/B0GDYTKHHB) | [![freedom_that_lasts_back_cover.png](docs/press_kit/book/freedom_that_lasts_back_cover.png)](https://www.amazon.com/dp/B0GDYTKHHB) 
+| [Order the book](https://www.amazon.com/dp/B0GDYTKHHB)                                                                                | [Visit Amazon Bookstore](https://www.amazon.com/dp/B0GDYTKHHB)                                                          |
 ## Notes
 
 - [A Note on Consensus](docs/notes/consensus.md)

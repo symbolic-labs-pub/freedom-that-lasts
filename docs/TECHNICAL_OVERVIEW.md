@@ -2,11 +2,11 @@
 
 ## Buy the book to see the full picture:
 
-[![horizonal_cover.png](press_kit/book/horizonal_cover.png)](https://amazon_book_url)
+[![horizonal_cover.png](press_kit/book/horizonal_cover.png)](https://www.amazon.com/dp/B0GDYTKHHB)
 
 **Event-sourced governance kernel preserving future option space through revocable delegation, time-bound learning laws, and anti-tyranny safeguards.**
 
-[Buy the book](https://amazon_book_url) to understand the [theory](paper.md) and how is layered!
+[Buy the book](https://www.amazon.com/dp/B0GDYTKHHB) to understand the [theory](paper.md) and how is layered!
 
 ## Overview
 
