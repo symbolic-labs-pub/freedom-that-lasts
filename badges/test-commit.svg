@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="111" height="20" role="img">
-    <a target="_blank" xlink:href="https://github.com/symbolic-labs-pub/freedom-that-lasts/commit/259a83d1e6175a6b312786927474c0a30f9fb34b">
+    <a target="_blank" xlink:href="https://github.com/symbolic-labs-pub/freedom-that-lasts/commit/f6423d8805c3254f602792ff1890bd521a718c81">
         <linearGradient id="s" x2="0" y2="100%">
             <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
             <stop offset="1" stop-opacity=".1"/>
@@ -15,8 +15,8 @@
         <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="110">
             <text aria-hidden="true" x="260.0" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="420">commit</text>
             <text x="260.0" y="140" transform="scale(.1)" fill="#fff" textLength="420">commit</text>
-            <text aria-hidden="true" x="815.0" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="490">259a83d</text>
-            <text x="815.0" y="140" transform="scale(.1)" fill="#fff" textLength="490">259a83d</text>
+            <text aria-hidden="true" x="815.0" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="490">f6423d8</text>
+            <text x="815.0" y="140" transform="scale(.1)" fill="#fff" textLength="490">f6423d8</text>
         </g>
     </a>
 </svg>
